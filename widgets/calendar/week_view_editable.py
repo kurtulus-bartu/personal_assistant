@@ -53,6 +53,32 @@ class CalendarWeekView(QtWidgets.QWidget):
     def minimumSizeHint(self) -> QtCore.QSize:
         return QtCore.QSize(600, 400)
 
+    def setEvents(self, events: Iterable[dict]):
+        """Replace current events with those from ``events``.
+
+        Each ``events`` item should contain ISO formatted ``start`` and ``end``
+        datetimes and may optionally include ``title``, ``id``, ``notes`` and
+        ``rrule`` fields.
+        """
+        self._events.clear()
+        for ev in events:
+            try:
+                start = datetime.fromisoformat(ev["start"])
+                end = datetime.fromisoformat(ev["end"])
+            except Exception:
+                continue
+            block = EventBlock(
+                task_id=int(ev.get("task_id") or ev.get("taskId") or 0),
+                start=start,
+                end=end,
+                title=ev.get("title", ""),
+                id=int(ev["id"]) if ev.get("id") is not None else None,
+                notes=ev.get("notes"),
+                rrule=ev.get("rrule"),
+            )
+            self._events.append(block)
+        self.update()
+
     # ---------- drag & drop (kanban -> takvim) ----------
     def dragEnterEvent(self, e: QtGui.QDragEnterEvent):
         if e.mimeData().hasFormat('application/x-task-id'):
@@ -181,17 +207,37 @@ class CalendarWeekView(QtWidgets.QWidget):
     def paintEvent(self, ev):
         p = QtGui.QPainter(self)
         p.fillRect(self.rect(), QtGui.QColor(COLOR_PRIMARY_BG))
-        p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
-        # dikey çizgiler/saat çizgileri vb… (kısaltılmış)
+
+        header_rect = QtCore.QRect(0, 0, self.width(), self._header_height)
+        p.fillRect(header_rect, QtGui.QColor(COLOR_SECONDARY_BG))
+
+        grid_color = QtGui.QColor(255, 255, 255, 40)
         col_width = (self.width() - self._left_timebar) / 7.0
+
+        # day headers + vertical grid
         for i in range(7):
             x = int(self._left_timebar + i * col_width)
-            p.drawLine(x, 0, x, self.height())
+            r = QtCore.QRect(x, 0, int(col_width), self._header_height)
+            label_date = self._anchor_monday.addDays(i)
+            txt = label_date.toString('ddd dd')
+            p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
+            p.drawText(r.adjusted(8, 0, -8, 0),
+                       QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft, txt)
+            p.setPen(QtGui.QPen(grid_color))
+            p.drawLine(x, self._header_height, x, self.height())
+
+        # hours horizontal + time labels
         for h in range(25):
-            y = 24 + int(h * self._hour_height)
-            p.setPen(QtGui.QPen(QtGui.QColor('#2d2d2d'))); p.drawLine(self._left_timebar, y, self.width(), y)
-            p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED))); p.drawText(6, y + 14, f"{h:02d}:00")
-        p.setPen(QtGui.QPen(QtGui.QColor('#3a3a3a'))); p.drawLine(self._left_timebar, 0, self._left_timebar, self.height())
+            y = self._header_height + int(h * self._hour_height)
+            p.setPen(QtGui.QPen(grid_color))
+            p.drawLine(self._left_timebar, y, self.width(), y)
+            if h < 24:
+                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
+                p.drawText(6, y + 14, f"{h:02d}:00")
+
+        # left divider
+        p.setPen(QtGui.QPen(grid_color))
+        p.drawLine(self._left_timebar, 0, self._left_timebar, self.height())
 
         # event rect hesaplama + çizim
         infos = []
@@ -200,16 +246,20 @@ class CalendarWeekView(QtWidgets.QWidget):
             day_idx = self._anchor_monday.daysTo(QDate(evb.start.year, evb.start.month, evb.start.day))
             if 0 <= day_idx <= 6:
                 x = int(self._left_timebar + day_idx * col_width) + 2
-                start_y = 24 + int((evb.start.hour + evb.start.minute/60) * self._hour_height)
-                end_y   = 24 + int((evb.end.hour   + evb.end.minute/60)   * self._hour_height)
+                start_y = self._header_height + int((evb.start.hour + evb.start.minute/60) * self._hour_height)
+                end_y   = self._header_height + int((evb.end.hour   + evb.end.minute/60)   * self._hour_height)
                 r = QtCore.QRect(x+2, start_y+2, int(col_width)-6, max(18, end_y-start_y-4))
                 self._event_rects[idx] = r
                 infos.append((idx, r))
 
         for idx, r in infos:
             p.fillRect(r, QtGui.QColor(COLOR_SECONDARY_BG))
-            p.setPen(QtGui.QPen(QtGui.QColor("#5a5a5a"))); p.drawRect(r)
+            p.setPen(QtGui.QPen(QtGui.QColor("#5a5a5a")))
+            p.drawRect(r)
             p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
             title = self._events[idx].title
-            p.drawText(r.adjusted(6, 2, -6, 0),
-                       QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft, title)
+            p.drawText(
+                r.adjusted(6, 2, -6, 0),
+                QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
+                title,
+            )

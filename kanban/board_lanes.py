@@ -22,6 +22,9 @@ class TaskLane(QtWidgets.QListWidget):
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragDrop)
         self.setMovement(QtWidgets.QListView.Movement.Snap)
 
+        # Double click handled by board; disable default inline editing
+        self.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+
         self.setStyleSheet(
             f"color:{COLOR_TEXT}; background:{COLOR_SECONDARY_BG}; "
             f"border:1px solid #3a3a3a; border-radius:8px;"
@@ -86,6 +89,7 @@ class TaskLane(QtWidgets.QListWidget):
 
 class KanbanBoard(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(int, str)  # (task_id, new_status)
+    taskActivated = QtCore.pyqtSignal(int)       # task_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -98,6 +102,9 @@ class KanbanBoard(QtWidgets.QWidget):
         self.todo.dropped.connect(lambda tid: self._on_lane_drop(tid, "not started"))
         self.inprog.dropped.connect(lambda tid: self._on_lane_drop(tid, "in progress"))
         self.done.dropped.connect(lambda tid: self._on_lane_drop(tid, "done"))
+
+        for lane in (self.todo, self.inprog, self.done):
+            lane.itemDoubleClicked.connect(self._emit_task_activated)
 
         def make_row(label: str, lane: TaskLane):
             row = QtWidgets.QVBoxLayout()
@@ -128,3 +135,10 @@ class KanbanBoard(QtWidgets.QWidget):
 
     def _on_lane_drop(self, task_id: int, new_status: str):
         self.statusChanged.emit(task_id, new_status)
+
+    def _emit_task_activated(self, item: QtWidgets.QListWidgetItem):
+        try:
+            task_id = int(item.data(QtCore.Qt.ItemDataRole.UserRole))
+            self.taskActivated.emit(task_id)
+        except Exception:
+            pass
