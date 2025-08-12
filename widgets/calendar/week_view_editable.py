@@ -67,8 +67,20 @@ class CalendarWeekView(QtWidgets.QWidget):
         self._events.clear()
         for ev in events:
             try:
-                start = datetime.fromisoformat(ev["start"])
-                end = datetime.fromisoformat(ev["end"])
+                start_raw = (
+                    ev.get("start")
+                    or ev.get("start_ts")
+                    or ev.get("starts_at")
+                )
+                end_raw = (
+                    ev.get("end")
+                    or ev.get("end_ts")
+                    or ev.get("ends_at")
+                )
+                if not start_raw or not end_raw:
+                    continue
+                start = datetime.fromisoformat(str(start_raw).replace("Z", "+00:00"))
+                end = datetime.fromisoformat(str(end_raw).replace("Z", "+00:00"))
             except Exception:
                 continue
             block = EventBlock(
