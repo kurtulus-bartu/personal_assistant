@@ -41,6 +41,25 @@ class CalendarWeekView(QtWidgets.QWidget):
         self._events.append(ev)
         self.update()
 
+    def setEvents(self, events: List[dict]):
+        """Replace current events with those from ``events``."""
+        self._events.clear()
+        for ev in events:
+            try:
+                start = datetime.fromisoformat(ev["start"])
+                end = datetime.fromisoformat(ev["end"])
+            except Exception:
+                continue
+            self._events.append(
+                EventBlock(
+                    task_id=int(ev.get("task_id") or ev.get("taskId") or 0),
+                    start=start,
+                    end=end,
+                    title=ev.get("title", ""),
+                )
+            )
+        self.update()
+
     # --- helpers ---
     def _monday_of(self, d: QDate) -> QDate:
         delta = d.dayOfWeek() - 1  # Monday=1
@@ -88,9 +107,10 @@ class CalendarWeekView(QtWidgets.QWidget):
         p.fillRect(self.rect(), QtGui.QColor(COLOR_PRIMARY_BG))
         header_rect = QRect(0, 0, self.width(), self._header_height)
         p.fillRect(header_rect, QtGui.QColor(COLOR_SECONDARY_BG))
-        p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
         col_width = (self.width() - self._left_timebar) / 7.0
+        grid_color = QtGui.QColor(255, 255, 255, 40)
         # left time bar label
+        p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
         p.drawText(8, 18, "Week")
         # day headers + vertical grid
         for i in range(7):
@@ -98,20 +118,24 @@ class CalendarWeekView(QtWidgets.QWidget):
             r = QtCore.QRect(x, 0, int(col_width), self._header_height)
             label_date = self._anchor_monday.addDays(i)
             txt = label_date.toString('ddd dd')
-            p.drawText(r.adjusted(8, 0, -8, 0), QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft, txt)
-            p.setPen(QtGui.QPen(QtGui.QColor('#3a3a3a')))
+            p.drawText(
+                r.adjusted(8, 0, -8, 0),
+                QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft,
+                txt,
+            )
+            p.setPen(QtGui.QPen(grid_color))
             p.drawLine(x, self._header_height, x, self.height())
             p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
         # hours horizontal
         for h in range(25):
             y = self._header_height + int(h * self._hour_height)
-            p.setPen(QtGui.QPen(QtGui.QColor('#303030')))
+            p.setPen(QtGui.QPen(grid_color))
             p.drawLine(self._left_timebar, y, self.width(), y)
             if h < 24:
                 p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
                 p.drawText(6, y + 14, f"{h:02d}:00")
         # left divider
-        p.setPen(QtGui.QPen(QtGui.QColor('#3a3a3a')))
+        p.setPen(QtGui.QPen(grid_color))
         p.drawLine(self._left_timebar, 0, self._left_timebar, self.height())
         # events
         for evb in self._events:
@@ -120,7 +144,11 @@ class CalendarWeekView(QtWidgets.QWidget):
                 x = int(self._left_timebar + day_idx * col_width) + 2
                 start_y = self._header_height + int((evb.start.hour + evb.start.minute/60) * self._hour_height)
                 end_y = self._header_height + int((evb.end.hour + evb.end.minute/60) * self._hour_height)
-                r = QtCore.QRect(x+2, start_y+2, int(col_width)-6, max(18, end_y-start_y-4))
+                r = QtCore.QRect(x + 2, start_y + 2, int(col_width) - 6, max(18, end_y - start_y - 4))
                 p.fillRect(r, QtGui.QColor(COLOR_ACCENT))
                 p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-                p.drawText(r.adjusted(6, 0, -6, 0), QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft, evb.title)
+                p.drawText(
+                    r.adjusted(6, 0, -6, 0),
+                    QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft,
+                    evb.title,
+                )
