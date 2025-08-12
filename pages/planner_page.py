@@ -289,7 +289,6 @@ class PlannerPage(QtWidgets.QWidget):
         m.date = d
         m.start = QtCore.QTime(evb.start.hour, evb.start.minute)
         m.end   = QtCore.QTime(evb.end.hour, evb.end.minute)
-        m.task_id = getattr(evb, "task_id", None)
         m.rrule   = getattr(evb, "rrule", None)
         dlg = EventTaskDialog(m, self)
         dlg.saved.connect(self._on_dialog_saved)
@@ -297,39 +296,15 @@ class PlannerPage(QtWidgets.QWidget):
         dlg.exec()
 
     def _on_dialog_saved(self, model):
-        # --- EVENT mantığı ---
-        if model.kind == "event":
-            if model.start and model.end:
-                start_iso = _to_iso_dt(model.date, model.start)
-                end_iso   = _to_iso_dt(model.date, model.end)
-                if model.id:  # güncelle
-                    self.store.update_event(int(model.id), start_iso, end_iso, title=model.title, notes=model.notes, rrule=model.rrule)
-                else:         # yeni event
-                    tid = int(model.task_id) if model.task_id else self.store.upsert_task(None, model.title or "Untitled", model.notes or "", _to_iso_qdate(model.date), has_time=False)
-                    self.store.create_event(tid, start_iso, end_iso, title=model.title, notes=model.notes, rrule=model.rrule)
-            else:
-                # saat kaldırıldı → event sil
-                if model.id:
-                    try: self.store.delete_event(int(model.id))
-                    except Exception: pass
-            return
-
-        # --- TASK mantığı ---
-        if model.kind == "task":
-            # 1) her koşulda task'ı upsert et (title/notes/due_date)
-            tid = int(model.id) if model.id else self.store.upsert_task(None, model.title or "Untitled", model.notes or "", _to_iso_qdate(model.date), has_time=False)
-            if not model.id:
-                model.id = tid
-            # 2) eğer kullanıcı saat işaretlediyse → event yarat
-            if model.start and model.end:
-                start_iso = _to_iso_dt(model.date, model.start)
-                end_iso   = _to_iso_dt(model.date, model.end)
-                self.store.create_event(int(model.id), start_iso, end_iso, title=model.title, notes=model.notes, rrule=model.rrule)
+        start_iso = _to_iso_dt(model.date, model.start) if model.start and model.end else None
+        end_iso   = _to_iso_dt(model.date, model.end) if model.start and model.end else None
+        due_iso   = _to_iso_qdate(model.date)
+        tid = self.store.upsert_task(model.id, model.title or "Untitled", model.notes or "", due_iso, start_iso=start_iso, end_iso=end_iso)
+        if not model.id:
+            model.id = tid
 
     def _on_dialog_deleted(self, model):
-        if model.kind == "event" and model.id:
-            self.store.delete_event(int(model.id))
-        elif model.kind == "task" and model.id:
+        if model.id:
             self.store.delete_task(int(model.id))
 
     # ---------------- Apply data to UI ----------------
@@ -375,18 +350,19 @@ class PlannerPage(QtWidgets.QWidget):
                                      QtCore.QTime(ev.start.hour, ev.start.minute)).toString(QtCore.Qt.DateFormat.ISODate)
         end_iso   = QtCore.QDateTime(QtCore.QDate(ev.end.year, ev.end.month, ev.end.day),
                                      QtCore.QTime(ev.end.hour, ev.end.minute)).toString(QtCore.Qt.DateFormat.ISODate)
-        task_id   = int(getattr(ev, "task_id", 0) or 0)
+        task_id   = int(getattr(ev, "task_id", 0) or getattr(ev, "id", 0) or 0)
         if task_id and start_iso and end_iso:
-            self.store.create_event(task_id, start_iso, end_iso)
+            self.store.set_task_times(task_id, start_iso, end_iso)
 
     def _on_block_moved(self, ev: EventBlock):
-        if getattr(ev, "id", None):
+        tid = int(getattr(ev, "id", 0) or getattr(ev, "task_id", 0) or 0)
+        if tid:
             start_iso = QtCore.QDateTime(QtCore.QDate(ev.start.year, ev.start.month, ev.start.day),
                                          QtCore.QTime(ev.start.hour, ev.start.minute)).toString(QtCore.Qt.DateFormat.ISODate)
             end_iso   = QtCore.QDateTime(QtCore.QDate(ev.end.year, ev.end.month, ev.end.day),
                                          QtCore.QTime(ev.end.hour, ev.end.minute)).toString(QtCore.Qt.DateFormat.ISODate)
             if start_iso and end_iso:
-                self.store.update_event(int(ev.id), start_iso, end_iso)
+                self.store.set_task_times(tid, start_iso, end_iso)
 
     def _on_block_resized(self, ev: EventBlock):
         self._on_block_moved(ev)

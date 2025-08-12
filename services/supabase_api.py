@@ -73,7 +73,7 @@ def delete_tag(tag_id: int) -> bool:
 
 # ---------------- TASKS ----------------
 
-TASK_FIELDS = "id,title,notes,status,tag_id,has_time,due_date,updated_at"
+TASK_FIELDS = "id,title,notes,status,tag_id,has_time,due_date,start_ts,end_ts,updated_at"
 
 def fetch_tasks() -> list[dict]:
     _ensure()
@@ -84,7 +84,7 @@ def fetch_tasks() -> list[dict]:
 
 def upsert_task(row: dict) -> dict:
     """
-    Beklenen: id? | title | notes | status | tag_id | has_time | due_date
+    Beklenen: id? | title | notes | status | tag_id | has_time | due_date | start_ts | end_ts
     due_date: 'YYYY-MM-DD' veya ISO ise sadece tarih kısmı gönderilir.
     """
     _ensure()
@@ -104,6 +104,10 @@ def upsert_task(row: dict) -> dict:
     if "due_date" in row and row["due_date"]:
         d = str(row["due_date"])
         payload["due_date"] = d.split("T", 1)[0]  # sadece tarih
+    if row.get("start_ts") or row.get("start") or row.get("starts_at"):
+        payload["start_ts"] = _zfix_ts(str(row.get("start_ts") or row.get("start") or row.get("starts_at")))
+    if row.get("end_ts") or row.get("end") or row.get("ends_at"):
+        payload["end_ts"] = _zfix_ts(str(row.get("end_ts") or row.get("end") or row.get("ends_at")))
 
     r = requests.post(
         url,
@@ -123,63 +127,12 @@ def delete_task(task_id: int) -> bool:
     r.raise_for_status()
     return True
 
-# ---------------- EVENTS ----------------
-
-EVENT_FIELDS = "id,task_id,title,notes,rrule,starts_at,ends_at,updated_at"
-
-def fetch_events() -> list[dict]:
-    _ensure()
-    url = f"{SUPABASE_URL}/rest/v1/events?select={EVENT_FIELDS}&order=starts_at.asc"
-    r = requests.get(url, headers=_headers())
-    r.raise_for_status()
-    return r.json()
-
-def upsert_event(row: dict) -> dict:
-    """
-    Beklenen: id? | task_id | title? | notes? | rrule? | starts_at/start_ts | ends_at/end_ts
-    """
-    _ensure()
-    url = f"{SUPABASE_URL}/rest/v1/events?on_conflict=id"
-    payload: dict[str, t.Any] = {}
-
-    if row.get("id"):
-        payload["id"] = int(row["id"])
-
-    # start_ts / starts_at ikisini de destekle
-    starts = row.get("starts_at") or row.get("start_ts")
-    ends   = row.get("ends_at")   or row.get("end_ts")
-
-    if "task_id" in row: payload["task_id"] = int(row["task_id"])
-    if "title" in row:   payload["title"]   = row["title"]
-    if "notes" in row:   payload["notes"]   = row["notes"]
-    if "rrule" in row:   payload["rrule"]   = row["rrule"]
-    if starts:           payload["starts_at"] = _zfix_ts(str(starts))
-    if ends:             payload["ends_at"]   = _zfix_ts(str(ends))
-
-    r = requests.post(
-        url,
-        headers=_headers("return=representation,resolution=merge-duplicates"),
-        json=payload,
-    )
-    r.raise_for_status()
-    out = r.json()
-    return out[0] if isinstance(out, list) and out else out
-
-def delete_event(event_id: int) -> bool:
-    _ensure()
-    url = f"{SUPABASE_URL}/rest/v1/events?id=eq.{int(event_id)}"
-    r = requests.delete(url, headers=_headers())
-    if r.status_code in (200, 204):
-        return True
-    r.raise_for_status()
-    return True
-
 # ---------------- ADMIN HELPERS ----------------
 
 def wipe_all():
-    """Delete all rows from tags, tasks and events tables."""
+    """Delete all rows from tags and tasks tables."""
     _ensure()
-    for tbl in ("events", "tasks", "tags"):
+    for tbl in ("tasks", "tags"):
         url = f"{SUPABASE_URL}/rest/v1/{tbl}?id=gt.0"
         r = requests.delete(url, headers=_headers())
         if r.status_code not in (200, 204):

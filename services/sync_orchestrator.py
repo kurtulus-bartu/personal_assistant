@@ -21,12 +21,9 @@ class SyncOrchestrator(QtCore.QObject):
         try:
             try:    tasks  = api.fetch_tasks()
             except: tasks = []
-            try:    events = api.fetch_events()
-            except: events = []
             try:    tags   = api.fetch_tags()
             except: tags   = []
             self.db.replace_all("tasks", tasks)
-            self.db.replace_all("events", events)
             self.db.replace_all("tags", tags)
         finally:
             self._emit_all_from_local()
@@ -36,7 +33,6 @@ class SyncOrchestrator(QtCore.QObject):
         self._set_busy(True)
         try:
             tasks = self.db.get_all_tasks()
-            events = self.db.get_events()
             tags = self.db.get_tags()
             try:
                 self.db.dequeue_all()
@@ -54,19 +50,6 @@ class SyncOrchestrator(QtCore.QObject):
             for t in tasks:
                 try:
                     api.upsert_task(t)
-                except Exception:
-                    pass
-            for ev in events:
-                try:
-                    api.upsert_event({
-                        "id": ev.get("id"),
-                        "task_id": ev.get("task_id"),
-                        "title": ev.get("title"),
-                        "notes": ev.get("notes"),
-                        "start_ts": ev.get("start_ts"),
-                        "end_ts": ev.get("end_ts"),
-                        "rrule": ev.get("rrule"),
-                    })
                 except Exception:
                     pass
             self.bootstrap()
@@ -87,14 +70,15 @@ class SyncOrchestrator(QtCore.QObject):
 
     # ---------- TASKS ----------
     def upsert_task(self, task_id: Optional[int], title: str, notes: str,
-                    due_date_iso: Optional[str], has_time: bool=False) -> int:
-        tid = self.db.upsert_task(task_id, title, notes, due_date_iso, has_time=has_time)
-        self.tasksUpdated.emit(self.db.get_tasks())
+                    due_date_iso: Optional[str], start_iso: Optional[str]=None,
+                    end_iso: Optional[str]=None) -> int:
+        tid = self.db.upsert_task(task_id, title, notes, due_date_iso, start_iso=start_iso, end_iso=end_iso)
+        self._emit_all_from_local()
         return tid
 
     def delete_task(self, task_id: int):
         self.db.delete_task(task_id)
-        self.tasksUpdated.emit(self.db.get_tasks())
+        self._emit_all_from_local()
 
     def set_task_status(self, task_id: int, status: str):
         # 🔒 Sadece status güncellenir — title asla değişmez
@@ -105,24 +89,8 @@ class SyncOrchestrator(QtCore.QObject):
         except Exception:
             pass
 
-    # ---------- EVENTS ----------
-    def create_event(self, task_id: int, start_iso: str, end_iso: str,
-                     title: Optional[str]=None, notes: Optional[str]=None, rrule: Optional[str]=None) -> int:
-        eid = self.db.create_event(task_id, start_iso, end_iso, title=title, notes=notes, rrule=rrule)
-        self.db.mark_task_has_time(task_id, True)
-        self._emit_all_from_local()
-        return eid
-
-    def update_event(self, event_id: int, start_iso: str, end_iso: str,
-                     title: Optional[str]=None, notes: Optional[str]=None, rrule: Optional[str]=None):
-        self.db.update_event(event_id, start_iso, end_iso, title=title, notes=notes, rrule=rrule)
-        self.eventsUpdated.emit(self.db.get_events())
-
-    def delete_event(self, event_id: int):
-        ev = self.db.get_event_by_id(event_id)
-        if ev and ev.get("task_id"):
-            self.db.mark_task_has_time(int(ev["task_id"]), False)
-        self.db.delete_event(event_id)
+    def set_task_times(self, task_id: int, start_iso: Optional[str], end_iso: Optional[str]):
+        self.db.set_task_times(task_id, start_iso, end_iso)
         self._emit_all_from_local()
 
     # ---------- helpers ----------
