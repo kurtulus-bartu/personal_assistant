@@ -140,7 +140,7 @@ class PlannerPage(QtWidgets.QWidget):
         self.week = CalendarWeekView(); self.week.setFixedHeight(self.week.sizeHint().height())
         self.day  = CalendarDayView();  self.day.setFixedHeight(self.day.sizeHint().height())
 
-        self.week_scroll = VScrollArea(); self.week_scroll.setWidget(self.week)
+        self.week_scroll = VScrollArea(min_day_w=120); self.week_scroll.setWidget(self.week)
         self.day_scroll  = VScrollArea(); self.day_scroll.setWidget(self.day)
 
         self.stacked = QtWidgets.QStackedWidget()

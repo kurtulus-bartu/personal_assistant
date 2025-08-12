@@ -173,3 +173,14 @@ def delete_event(event_id: int) -> bool:
         return True
     r.raise_for_status()
     return True
+
+# ---------------- ADMIN HELPERS ----------------
+
+def wipe_all():
+    """Delete all rows from tags, tasks and events tables."""
+    _ensure()
+    for tbl in ("events", "tasks", "tags"):
+        url = f"{SUPABASE_URL}/rest/v1/{tbl}?id=gt.0"
+        r = requests.delete(url, headers=_headers())
+        if r.status_code not in (200, 204):
+            r.raise_for_status()

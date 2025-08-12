@@ -136,6 +136,12 @@ class LocalDB:
         """).fetchall()
         return [dict(r) for r in rs]
 
+    def get_all_tasks(self) -> List[Dict[str, Any]]:
+        rs = self._conn.execute(
+            "SELECT * FROM tasks WHERE deleted=0 ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rs]
+
     def get_task_by_id(self, task_id: int) -> Optional[Dict[str, Any]]:
         r = self._conn.execute("SELECT * FROM tasks WHERE id=?", (int(task_id),)).fetchone()
         return dict(r) if r else None

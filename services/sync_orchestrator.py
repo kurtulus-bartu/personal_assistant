@@ -35,20 +35,40 @@ class SyncOrchestrator(QtCore.QObject):
     def refresh(self):
         self._set_busy(True)
         try:
-            items = self.db.dequeue_all()
-            for it in items:
-                table   = it.get("table")
-                op      = it.get("op")
-                payload = it.get("payload") or {}
-                if table == "tags":
-                    if op in ("insert","upsert"): api.upsert_tag(payload.get("name",""), payload.get("id"))
-                    elif op == "delete" and payload.get("id"): api.delete_tag(int(payload["id"]))
-                elif table == "tasks":
-                    if op in ("insert","upsert"): api.upsert_task(payload)
-                    elif op == "delete" and payload.get("id"): api.delete_task(int(payload["id"]))
-                elif table == "events":
-                    if op in ("insert","upsert"): api.upsert_event(payload)
-                    elif op == "delete" and payload.get("id"): api.delete_event(int(payload["id"]))
+            tasks = self.db.get_all_tasks()
+            events = self.db.get_events()
+            tags = self.db.get_tags()
+            try:
+                self.db.dequeue_all()
+            except Exception:
+                pass
+            try:
+                api.wipe_all()
+            except Exception as e:
+                print("wipe error:", e)
+            for g in tags:
+                try:
+                    api.upsert_tag(g.get("name", ""), g.get("id"))
+                except Exception:
+                    pass
+            for t in tasks:
+                try:
+                    api.upsert_task(t)
+                except Exception:
+                    pass
+            for ev in events:
+                try:
+                    api.upsert_event({
+                        "id": ev.get("id"),
+                        "task_id": ev.get("task_id"),
+                        "title": ev.get("title"),
+                        "notes": ev.get("notes"),
+                        "start_ts": ev.get("start_ts"),
+                        "end_ts": ev.get("end_ts"),
+                        "rrule": ev.get("rrule"),
+                    })
+                except Exception:
+                    pass
             self.bootstrap()
         except Exception as e:
             print("refresh error:", e)
@@ -80,6 +100,10 @@ class SyncOrchestrator(QtCore.QObject):
         # 🔒 Sadece status güncellenir — title asla değişmez
         self.db.set_task_status(task_id, status)
         self.tasksUpdated.emit(self.db.get_tasks())
+        try:
+            api.upsert_task({"id": int(task_id), "status": status})
+        except Exception:
+            pass
 
     # ---------- EVENTS ----------
     def create_event(self, task_id: int, start_iso: str, end_iso: str,
