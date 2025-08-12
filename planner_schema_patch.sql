@@ -1,6 +1,5 @@
 -- === Planner Schema Patch (idempotent) ===
--- Tasks: notes, has_time, due_date
--- Events: title, notes, rrule
+-- Tasks: notes, has_time, due_date, start_ts, end_ts
 
 -- 1) TASKS kolonları
 ALTER TABLE IF EXISTS public.tasks
@@ -12,21 +11,16 @@ ALTER TABLE IF EXISTS public.tasks
 ALTER TABLE IF EXISTS public.tasks
   ADD COLUMN IF NOT EXISTS due_date date NULL;
 
--- 2) EVENTS kolonları
-ALTER TABLE IF EXISTS public.events
-  ADD COLUMN IF NOT EXISTS title text NULL;
+ALTER TABLE IF EXISTS public.tasks
+  ADD COLUMN IF NOT EXISTS start_ts timestamptz NULL;
 
-ALTER TABLE IF EXISTS public.events
-  ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFAULT '';
+ALTER TABLE IF EXISTS public.tasks
+  ADD COLUMN IF NOT EXISTS end_ts   timestamptz NULL;
 
-ALTER TABLE IF EXISTS public.events
-  ADD COLUMN IF NOT EXISTS rrule text NULL;
+-- 2) Faydalı indeksler
+CREATE INDEX IF NOT EXISTS idx_tasks_starts_at ON public.tasks (start_ts);
 
--- 3) Faydalı indeksler
-CREATE INDEX IF NOT EXISTS idx_events_starts_at ON public.events (starts_at);
-CREATE INDEX IF NOT EXISTS idx_events_task_id  ON public.events (task_id);
-
--- 4) Sadece zaman atanmamış görevler için opsiyonel view/index
+-- 3) Sadece zaman atanmamış görevler için opsiyonel view/index
 CREATE INDEX IF NOT EXISTS idx_tasks_unscheduled ON public.tasks (id)
 WHERE COALESCE(has_time, false) = false;
 

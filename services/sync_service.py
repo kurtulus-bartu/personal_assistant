@@ -26,9 +26,9 @@ class SyncService(QtCore.QObject):
     @QtCore.pyqtSlot()
     def pull_all(self):
         try:
-            tasks  = api.fetch_tasks()
-            events = api.fetch_events()
-            tags   = api.fetch_tags()
+            tasks = api.fetch_tasks()
+            tags  = api.fetch_tags()
+            events = [t for t in tasks if t.get("has_time") and t.get("start_ts") and t.get("end_ts")]
             self.tasksUpdated.emit(tasks)
             self.eventsUpdated.emit(events)
             self.tagsUpdated.emit(tags)
@@ -46,12 +46,6 @@ class SyncService(QtCore.QObject):
 
     def delete_task(self, task_id: int) -> bool:
         return api.delete_task(task_id)
-
-    def upsert_event(self, ev: Dict[str, Any]) -> Dict[str, Any]:
-        return api.upsert_event(ev)
-
-    def delete_event(self, ev_id: int) -> bool:
-        return api.delete_event(ev_id)
 
     def upsert_tag(self, name: str, tag_id: int | None = None) -> Dict[str, Any]:
         return api.upsert_tag(name, tag_id)
