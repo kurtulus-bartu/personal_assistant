@@ -61,7 +61,13 @@ class CalendarDayView(QtWidgets.QWidget):
         hour, minute = self._time_for_y(pos.y())
         start_dt = datetime(self._date.year(), self._date.month(), self._date.day(), hour, minute)
         end_dt = start_dt + timedelta(minutes=60)
-        ev = EventBlock(task_id=task_id, start=start_dt, end=end_dt, title=f"Task #{task_id}")
+        title = f"Task #{task_id}"
+        if e.mimeData().hasFormat('application/x-task-title'):
+            try:
+                title = bytes(e.mimeData().data('application/x-task-title')).decode('utf-8')
+            except Exception:
+                title = f"Task #{task_id}"
+        ev = EventBlock(task_id=task_id, start=start_dt, end=end_dt, title=title)
         self.blockCreated.emit(ev)
         self._events.append(ev)
         self.update()
@@ -99,6 +105,7 @@ class CalendarDayView(QtWidgets.QWidget):
         evb = self._events[idx]
         mime = QtCore.QMimeData()
         mime.setData('application/x-task-id', str(evb.task_id).encode('utf-8'))
+        mime.setData('application/x-task-title', evb.title.encode('utf-8'))
         drag = QtGui.QDrag(self)
         drag.setMimeData(mime)
         result = drag.exec(QtCore.Qt.DropAction.MoveAction)

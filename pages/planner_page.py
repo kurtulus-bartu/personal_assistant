@@ -4,7 +4,14 @@ from widgets.layout.left_panel import LeftPanel
 from widgets.calendar.week_view_editable import CalendarWeekView, EventBlock
 from widgets.calendar.day_view import CalendarDayView
 from kanban.board_lanes import KanbanBoard
-from theme.colors import COLOR_PRIMARY_BG, COLOR_SECONDARY_BG
+from widgets.layout.navigator import NavIconButton
+from utils.icons import make_icon_pm_pair
+from theme.colors import (
+    COLOR_PRIMARY_BG,
+    COLOR_SECONDARY_BG,
+    COLOR_TEXT_MUTED,
+    COLOR_ACCENT,
+)
 from services.sync_orchestrator import SyncOrchestrator
 
 # Diyalog (tek ekran – task/event)
@@ -57,10 +64,13 @@ class PlannerPage(QtWidgets.QWidget):
         font.setPointSize(20); font.setWeight(600); title.setFont(font)
         header.addWidget(title)
         header.addStretch(1)
-        self.btn_refresh = QtWidgets.QToolButton()
-        self.btn_refresh.setText("Refresh")
-        self.btn_refresh.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self.btn_refresh.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
+        pm_n, pm_a = make_icon_pm_pair(
+            self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_BrowserReload),
+            size=24,
+            normal_color=COLOR_TEXT_MUTED,
+            active_color=COLOR_ACCENT,
+        )
+        self.btn_refresh = NavIconButton(pm_n, pm_a, row_width=40, box_w=32, box_h=32, tooltip="Refresh")
         self.btn_refresh.clicked.connect(self._on_refresh_clicked)
         header.addWidget(self.btn_refresh)
         root.addWidget(header_w)
@@ -88,24 +98,31 @@ class PlannerPage(QtWidgets.QWidget):
         class VScrollArea(QtWidgets.QScrollArea):
             def __init__(self, *a, **k):
                 super().__init__(*a, **k)
-                self.setWidgetResizable(True)
+                self.setWidgetResizable(False)
                 self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
                 self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
                 self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-                self.verticalScrollBar().setStyleSheet(
+                self.setStyleSheet(
                     f"""
                     QScrollBar:vertical {{
                         background: {COLOR_SECONDARY_BG};
                         width: 10px; margin: 0; border: 0; }}
                     QScrollBar::handle:vertical {{
                         background: #555; min-height: 36px; border-radius: 5px; }}
-                    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-                    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+                    QScrollBar:horizontal {{
+                        background: {COLOR_SECONDARY_BG};
+                        height: 10px; margin: 0; border: 0; }}
+                    QScrollBar::handle:horizontal {{
+                        background: #555; min-width: 36px; border-radius: 5px; }}
+                    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+                    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ height: 0; width: 0; }}
+                    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical,
+                    QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
                     """
                 )
 
-        self.week = CalendarWeekView(); self.week.setMinimumHeight(560)
-        self.day  = CalendarDayView();  self.day.setMinimumHeight(560)
+        self.week = CalendarWeekView(); self.week.setFixedHeight(self.week.sizeHint().height())
+        self.day  = CalendarDayView();  self.day.setFixedHeight(self.day.sizeHint().height())
 
         self.week_scroll = VScrollArea(); self.week_scroll.setWidget(self.week)
         self.day_scroll  = VScrollArea(); self.day_scroll.setWidget(self.day)
@@ -156,6 +173,8 @@ class PlannerPage(QtWidgets.QWidget):
         if hasattr(self.left, "attachStore"):
             self.left.attachStore(self.store)
         self.store.bootstrap()
+        if hasattr(self.kanban, "statusChanged"):
+            self.kanban.statusChanged.connect(self.store.set_task_status)
 
     def _on_refresh_clicked(self):
         self.store.refresh()
