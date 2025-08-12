@@ -96,12 +96,15 @@ class PlannerPage(QtWidgets.QWidget):
         content_l.setSpacing(8)
 
         class VScrollArea(QtWidgets.QScrollArea):
-            def __init__(self, *a, **k):
+            """ScrollArea that keeps week view scalable until a min column width."""
+
+            def __init__(self, *a, min_day_w: int = 160, **k):
                 super().__init__(*a, **k)
                 self.setWidgetResizable(False)
                 self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
                 self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
                 self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+                self._min_day_w = min_day_w
                 self.setStyleSheet(
                     f"""
                     QScrollBar:vertical {{
@@ -120,6 +123,19 @@ class PlannerPage(QtWidgets.QWidget):
                     QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
                     """
                 )
+
+            def resizeEvent(self, ev: QtGui.QResizeEvent):
+                super().resizeEvent(ev)
+                w = self.viewport().width()
+                widget = self.widget()
+                if widget is None:
+                    return
+                # Minimum width: left timebar + 7 * min_day_w if available
+                min_w = self._min_day_w * 7
+                if hasattr(widget, "_left_timebar"):
+                    min_w += getattr(widget, "_left_timebar", 0)
+                target_w = max(w, min_w)
+                widget.setFixedWidth(int(target_w))
 
         self.week = CalendarWeekView(); self.week.setFixedHeight(self.week.sizeHint().height())
         self.day  = CalendarDayView();  self.day.setFixedHeight(self.day.sizeHint().height())
@@ -250,12 +266,10 @@ class PlannerPage(QtWidgets.QWidget):
     def _open_task_dialog_by_id(self, task_id: int):
         if not EventTaskDialog:
             return
-        # Lokalden oku
+        # Lokalden oku (store'un DB'si güncel; ayrı bağlantı kullanma)
         try:
-            from services.local_db import LocalDB
-            db = getattr(self, "_debug_db_singleton", None) or LocalDB()
-            self._debug_db_singleton = db
-            t = db.get_task_by_id(int(task_id))
+            db = getattr(self.store, "db", None)
+            t = db.get_task_by_id(int(task_id)) if db else None
         except Exception:
             t = None
         m = ItemModel(kind="task", id=int(task_id), title=(t or {}).get("title", ""), notes=(t or {}).get("notes", ""))
