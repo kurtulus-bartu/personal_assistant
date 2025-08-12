@@ -73,7 +73,7 @@ def delete_tag(tag_id: int) -> bool:
 
 # ---------------- TASKS ----------------
 
-TASK_FIELDS = "id,title,notes,status,tag_id,has_time,due_date,start_ts,end_ts,updated_at"
+TASK_FIELDS = "id,title,notes,status,tag_id,has_time,due_date,start_ts,end_ts,parent_id,updated_at"
 
 def fetch_tasks() -> list[dict]:
     _ensure()
@@ -108,6 +108,8 @@ def upsert_task(row: dict) -> dict:
         payload["start_ts"] = _zfix_ts(str(row.get("start_ts") or row.get("start") or row.get("starts_at")))
     if row.get("end_ts") or row.get("end") or row.get("ends_at"):
         payload["end_ts"] = _zfix_ts(str(row.get("end_ts") or row.get("end") or row.get("ends_at")))
+    if "parent_id" in row:
+        payload["parent_id"] = int(row["parent_id"]) if row["parent_id"] is not None else None
 
     r = requests.post(
         url,
