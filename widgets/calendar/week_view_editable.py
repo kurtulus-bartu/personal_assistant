@@ -53,6 +53,10 @@ class CalendarWeekView(QtWidgets.QWidget):
     def minimumSizeHint(self) -> QtCore.QSize:
         return QtCore.QSize(600, 400)
 
+    def sizeHint(self) -> QtCore.QSize:
+        """Suggest full height so parent scroll area can enable vertical scroll."""
+        return QtCore.QSize(800, self._header_height + self._hour_height * 24)
+
     def setEvents(self, events: Iterable[dict]):
         """Replace current events with those from ``events``.
 
@@ -96,13 +100,19 @@ class CalendarWeekView(QtWidgets.QWidget):
         if not e.mimeData().hasFormat('application/x-task-id'):
             e.ignore(); return
         task_id = int(bytes(e.mimeData().data('application/x-task-id')).decode('utf-8'))
+        title = f"Task #{task_id}"
+        if e.mimeData().hasFormat('application/x-task-title'):
+            try:
+                title = bytes(e.mimeData().data('application/x-task-title')).decode('utf-8')
+            except Exception:
+                title = f"Task #{task_id}"
         pos = e.position().toPoint()
         day_idx = self._day_index_for_x(pos.x())
         date = self._anchor_monday.addDays(day_idx)
         hour, minute = self._time_for_y(pos.y())
         start_dt = datetime(date.year(), date.month(), date.day(), hour, minute)
         end_dt = start_dt + timedelta(minutes=60)
-        ev = EventBlock(task_id=task_id, start=start_dt, end=end_dt, title=f"Task #{task_id}")
+        ev = EventBlock(task_id=task_id, start=start_dt, end=end_dt, title=title)
         self.blockCreated.emit(ev)
         self._events.append(ev)
         self.update()
