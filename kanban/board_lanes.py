@@ -4,6 +4,7 @@ from typing import Dict
 
 class TaskLane(QtWidgets.QListWidget):
     dropped = QtCore.pyqtSignal(int, str)  # task_id, title
+    droppedOnTask = QtCore.pyqtSignal(int, int)  # child_id, parent_id
 
     def __init__(self, title: str, parent=None):
         super().__init__(parent)
@@ -57,6 +58,12 @@ class TaskLane(QtWidgets.QListWidget):
             except Exception:
                 title = None
 
+        # Hedef item? (alt görev)
+        target_item = self.itemAt(e.position().toPoint())
+        parent_id = None
+        if target_item and target_item.data(QtCore.Qt.ItemDataRole.UserRole) != task_id:
+            parent_id = int(target_item.data(QtCore.Qt.ItemDataRole.UserRole))
+
         # Kaynaktan çıkar
         src = e.source()
         if isinstance(src, TaskLane) and src is not self:
@@ -73,6 +80,8 @@ class TaskLane(QtWidgets.QListWidget):
         self._add_task_item(task_id, title)
         e.acceptProposedAction()
         self.dropped.emit(task_id, title or f"Task #{task_id}")
+        if parent_id is not None:
+            self.droppedOnTask.emit(task_id, parent_id)
 
     def _add_task_item(self, task_id: int, title: str | None = None):
         it = QtWidgets.QListWidgetItem(title or f"Task #{task_id}")
@@ -99,6 +108,7 @@ class TaskLane(QtWidgets.QListWidget):
 class KanbanBoard(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(int, str)  # (task_id, new_status)
     taskActivated = QtCore.pyqtSignal(int)       # task_id
+    taskReparented = QtCore.pyqtSignal(int, int)  # child_id, parent_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -116,6 +126,7 @@ class KanbanBoard(QtWidgets.QWidget):
 
         for lane in (self.todo, self.inprog, self.done):
             lane.itemDoubleClicked.connect(self._emit_task_activated)
+            lane.droppedOnTask.connect(self._emit_reparent)
 
         def make_row(label: str, lane: TaskLane):
             row = QtWidgets.QVBoxLayout()
@@ -136,7 +147,8 @@ class KanbanBoard(QtWidgets.QWidget):
             self._title_map[tid] = title
             status = (t.get("status") or "not started").lower()
             lane = self.todo if status == "not started" else (self.inprog if status == "in progress" else self.done)
-            lane._add_task_item(tid, title)
+            disp_title = "  ↳ " + title if t.get("parent_id") else title
+            lane._add_task_item(tid, disp_title)
 
     def move_task(self, task_id: int, target: str):
         target = target.lower()
@@ -157,3 +169,6 @@ class KanbanBoard(QtWidgets.QWidget):
             self.taskActivated.emit(task_id)
         except Exception:
             pass
+
+    def _emit_reparent(self, child_id: int, parent_id: int):
+        self.taskReparented.emit(child_id, parent_id)

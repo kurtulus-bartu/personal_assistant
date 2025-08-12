@@ -71,8 +71,8 @@ class SyncOrchestrator(QtCore.QObject):
     # ---------- TASKS ----------
     def upsert_task(self, task_id: Optional[int], title: str, notes: str,
                     due_date_iso: Optional[str], start_iso: Optional[str]=None,
-                    end_iso: Optional[str]=None) -> int:
-        tid = self.db.upsert_task(task_id, title, notes, due_date_iso, start_iso=start_iso, end_iso=end_iso)
+                    end_iso: Optional[str]=None, parent_id: Optional[int]=None) -> int:
+        tid = self.db.upsert_task(task_id, title, notes, due_date_iso, start_iso=start_iso, end_iso=end_iso, parent_id=parent_id)
         self._emit_all_from_local()
         return tid
 
@@ -92,6 +92,14 @@ class SyncOrchestrator(QtCore.QObject):
     def set_task_times(self, task_id: int, start_iso: Optional[str], end_iso: Optional[str]):
         self.db.set_task_times(task_id, start_iso, end_iso)
         self._emit_all_from_local()
+
+    def set_task_parent(self, task_id: int, parent_id: Optional[int]):
+        self.db.set_task_parent(task_id, parent_id)
+        self.tasksUpdated.emit(self.db.get_tasks())
+        try:
+            api.upsert_task({"id": int(task_id), "parent_id": parent_id})
+        except Exception:
+            pass
 
     # ---------- helpers ----------
     def _emit_all_from_local(self):
