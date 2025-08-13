@@ -14,16 +14,18 @@ class ItemModel:
     end: Optional[QtCore.QTime] = None
     rrule: str | None = None
     task_id: Optional[int] = None  # if event
+    parent_id: Optional[int] = None
 
 class EventTaskDialog(QtWidgets.QDialog):
     saved = QtCore.pyqtSignal(object)    # ItemModel
     deleted = QtCore.pyqtSignal(object)  # ItemModel
 
-    def __init__(self, model: ItemModel, parent=None):
+    def __init__(self, model: ItemModel, parent=None, parent_options: list[tuple[int,str]] | None = None):
         super().__init__(parent)
         self.setWindowTitle("Edit")
         self.setModal(True)
         self._model = model
+        self._parent_options = parent_options or []
         self.setMinimumWidth(480)
 
         main = QtWidgets.QVBoxLayout(self)
@@ -37,6 +39,16 @@ class EventTaskDialog(QtWidgets.QDialog):
         self.edt_notes = QtWidgets.QPlainTextEdit(); self.edt_notes.setPlaceholderText("Notes…")
         self.edt_notes.setFixedHeight(100)
         main.addWidget(self.edt_notes)
+
+        # Parent selection
+        parent_row = QtWidgets.QHBoxLayout(); parent_row.setSpacing(8)
+        self.cmb_parent = QtWidgets.QComboBox()
+        self.cmb_parent.addItem("None", None)
+        for pid, title in self._parent_options:
+            self.cmb_parent.addItem(title, pid)
+        parent_row.addWidget(QtWidgets.QLabel("Parent"))
+        parent_row.addWidget(self.cmb_parent, 1)
+        main.addLayout(parent_row)
 
         # Date + time row
         row = QtWidgets.QHBoxLayout(); row.setSpacing(8)
@@ -101,6 +113,12 @@ class EventTaskDialog(QtWidgets.QDialog):
             self.edt_rrule.setEnabled(True)
         else:
             self.cmb_recur.setCurrentText("None")
+        if m.parent_id is not None:
+            idx = self.cmb_parent.findData(int(m.parent_id))
+            if idx != -1:
+                self.cmb_parent.setCurrentIndex(idx)
+        else:
+            self.cmb_parent.setCurrentIndex(0)
 
     def _on_delete(self):
         self.deleted.emit(self._model)
@@ -127,5 +145,7 @@ class EventTaskDialog(QtWidgets.QDialog):
             m.rrule = "RRULE=FREQ=MONTHLY;INTERVAL=1"
         else:
             m.rrule = self.edt_rrule.text().strip() or None
+        data = self.cmb_parent.currentData()
+        m.parent_id = int(data) if data is not None else None
         self.saved.emit(m)
         self.accept()

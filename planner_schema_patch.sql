@@ -1,5 +1,5 @@
 -- === Planner Schema Patch (idempotent) ===
--- Tasks: notes, has_time, due_date, start_ts, end_ts
+-- Tasks: notes, has_time, due_date, start_ts, end_ts, parent_id
 
 -- 1) TASKS kolonları
 ALTER TABLE IF EXISTS public.tasks
@@ -17,8 +17,13 @@ ALTER TABLE IF EXISTS public.tasks
 ALTER TABLE IF EXISTS public.tasks
   ADD COLUMN IF NOT EXISTS end_ts   timestamptz NULL;
 
+ALTER TABLE IF EXISTS public.tasks
+  ADD COLUMN IF NOT EXISTS parent_id bigint NULL REFERENCES public.tasks(id);
+
 -- 2) Faydalı indeksler
 CREATE INDEX IF NOT EXISTS idx_tasks_starts_at ON public.tasks (start_ts);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON public.tasks (parent_id);
 
 -- 3) Sadece zaman atanmamış görevler için opsiyonel view/index
 CREATE INDEX IF NOT EXISTS idx_tasks_unscheduled ON public.tasks (id)

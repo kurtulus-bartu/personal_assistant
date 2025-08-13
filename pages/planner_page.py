@@ -191,6 +191,8 @@ class PlannerPage(QtWidgets.QWidget):
         self.store.bootstrap()
         if hasattr(self.kanban, "statusChanged"):
             self.kanban.statusChanged.connect(self.store.set_task_status)
+        if hasattr(self.kanban, "taskReparented"):
+            self.kanban.taskReparented.connect(self.store.set_task_parent)
 
     def _on_refresh_clicked(self):
         self.store.refresh()
@@ -258,7 +260,14 @@ class PlannerPage(QtWidgets.QWidget):
             m.start = start; m.end = end
         else:
             m.start = None;  m.end = None
-        dlg = EventTaskDialog(m, self)
+        opts = []
+        try:
+            db = getattr(self.store, "db", None)
+            tasks = db.get_tasks() if db else []
+            opts = [(int(t["id"]), t.get("title", "")) for t in tasks]
+        except Exception:
+            pass
+        dlg = EventTaskDialog(m, self, parent_options=opts)
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
         dlg.exec()
@@ -276,7 +285,14 @@ class PlannerPage(QtWidgets.QWidget):
         # Görev – saat kapalı başlat
         m.date = self._anchor_date
         m.start = None; m.end = None
-        dlg = EventTaskDialog(m, self)
+        m.parent_id = (t or {}).get("parent_id")
+        opts = []
+        try:
+            tasks = db.get_tasks() if db else []
+            opts = [(int(x["id"]), x.get("title", "")) for x in tasks if int(x["id"]) != int(task_id)]
+        except Exception:
+            pass
+        dlg = EventTaskDialog(m, self, parent_options=opts)
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
         dlg.exec()
@@ -299,7 +315,7 @@ class PlannerPage(QtWidgets.QWidget):
         start_iso = _to_iso_dt(model.date, model.start) if model.start and model.end else None
         end_iso   = _to_iso_dt(model.date, model.end) if model.start and model.end else None
         due_iso   = _to_iso_qdate(model.date)
-        tid = self.store.upsert_task(model.id, model.title or "Untitled", model.notes or "", due_iso, start_iso=start_iso, end_iso=end_iso)
+        tid = self.store.upsert_task(model.id, model.title or "Untitled", model.notes or "", due_iso, start_iso=start_iso, end_iso=end_iso, parent_id=model.parent_id)
         if not model.id:
             model.id = tid
 
