@@ -164,6 +164,9 @@ class PlannerPage(QtWidgets.QWidget):
         self.project_bar.changed.connect(self.on_project_changed)
         r_l.addWidget(self.project_bar)
         r_l.addWidget(self.kanban, 1)
+        self.btn_add_project = QtWidgets.QPushButton("Add Project")
+        self.btn_add_project.clicked.connect(self._on_add_project_clicked)
+        r_l.addWidget(self.btn_add_project)
         h.addWidget(right)
 
         root.addWidget(central, 1)
@@ -207,6 +210,11 @@ class PlannerPage(QtWidgets.QWidget):
 
     def _on_refresh_clicked(self):
         self.store.refresh()
+
+    def _on_add_project_clicked(self):
+        name, ok = QtWidgets.QInputDialog.getText(self, "Add Project", "Project name:")
+        if ok and name.strip():
+            self.store.add_project(name.strip())
 
     # ---------------- Event Filter: double-click ----------------
     def eventFilter(self, obj: QtCore.QObject, ev: QtCore.QEvent) -> bool:
