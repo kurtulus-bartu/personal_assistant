@@ -23,6 +23,8 @@ class LocalDB:
             title TEXT NOT NULL,
             notes TEXT DEFAULT '',
             status TEXT DEFAULT 'todo',
+            tag_id INTEGER,
+            project_id INTEGER,
             due_date TEXT,
             start_ts TEXT,
             end_ts   TEXT,
@@ -39,8 +41,17 @@ class LocalDB:
         except sqlite3.OperationalError: pass
         try: c.execute("ALTER TABLE tasks ADD COLUMN parent_id INTEGER")
         except sqlite3.OperationalError: pass
+        try: c.execute("ALTER TABLE tasks ADD COLUMN tag_id INTEGER")
+        except sqlite3.OperationalError: pass
+        try: c.execute("ALTER TABLE tasks ADD COLUMN project_id INTEGER")
+        except sqlite3.OperationalError: pass
         c.execute("""
         CREATE TABLE IF NOT EXISTS tags(
+            id INTEGER PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL
+        )""")
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS projects(
             id INTEGER PRIMARY KEY,
             name TEXT UNIQUE NOT NULL
         )""")
@@ -84,13 +95,15 @@ class LocalDB:
             self._conn.execute("DELETE FROM tasks")
             for t in rows or []:
                 self._conn.execute("""
-                    INSERT INTO tasks(id, title, notes, status, due_date, start_ts, end_ts, has_time, deleted, parent_id, created_at, updated_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                    INSERT INTO tasks(id, title, notes, status, tag_id, project_id, due_date, start_ts, end_ts, has_time, deleted, parent_id, created_at, updated_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, (
                     t.get("id"),
                     t.get("title",""),
                     t.get("notes",""),
                     t.get("status","todo"),
+                    t.get("tag_id"),
+                    t.get("project_id"),
                     t.get("due_date"),
                     t.get("start_ts"),
                     t.get("end_ts"),
@@ -105,6 +118,11 @@ class LocalDB:
             self._conn.execute("DELETE FROM tags")
             for g in rows or []:
                 self._conn.execute("INSERT OR IGNORE INTO tags(id, name) VALUES(?,?)", (g.get("id"), g.get("name")))
+
+        elif table == "projects":
+            self._conn.execute("DELETE FROM projects")
+            for p in rows or []:
+                self._conn.execute("INSERT OR IGNORE INTO projects(id, name) VALUES(?,?)", (p.get("id"), p.get("name")))
 
         self._conn.commit()
 
@@ -139,6 +157,10 @@ class LocalDB:
         rs = self._conn.execute("SELECT * FROM tags").fetchall()
         return [dict(r) for r in rs]
 
+    def get_projects(self) -> List[Dict[str, Any]]:
+        rs = self._conn.execute("SELECT * FROM projects").fetchall()
+        return [dict(r) for r in rs]
+
     # ---------------- TAGS ops ----------------
     def add_tag_local(self, name: str) -> int:
         cur = self._conn.execute("INSERT INTO tags(name) VALUES(?)", (name,))
@@ -152,16 +174,30 @@ class LocalDB:
         self._enqueue("tags", "delete", {"id": int(tag_id)})
         self._conn.commit()
 
+    # ---------------- PROJECTS ops ----------------
+    def add_project_local(self, name: str) -> int:
+        cur = self._conn.execute("INSERT INTO projects(name) VALUES(?)", (name,))
+        pid = int(cur.lastrowid)
+        self._enqueue("projects", "insert", {"name": name})
+        self._conn.commit()
+        return pid
+
+    def delete_project_local(self, project_id: int):
+        self._conn.execute("DELETE FROM projects WHERE id=?", (int(project_id),))
+        self._enqueue("projects", "delete", {"id": int(project_id)})
+        self._conn.commit()
+
     # ---------------- TASKS ops ----------------
     def upsert_task(self, task_id: Optional[int], title: str, notes: str,
                     due_date_iso: Optional[str], start_iso: Optional[str]=None,
-                    end_iso: Optional[str]=None, parent_id: Optional[int]=None) -> int:
+                    end_iso: Optional[str]=None, parent_id: Optional[int]=None,
+                    tag_id: Optional[int]=None, project_id: Optional[int]=None) -> int:
         has_time = int(bool(start_iso and end_iso))
         if task_id:
             self._conn.execute("""
-                UPDATE tasks SET title=?, notes=?, due_date=?, start_ts=?, end_ts=?, has_time=?, parent_id=?, updated_at=?
+                UPDATE tasks SET title=?, notes=?, due_date=?, start_ts=?, end_ts=?, has_time=?, parent_id=?, tag_id=?, project_id=?, updated_at=?
                 WHERE id=?
-            """, (title, notes, due_date_iso, start_iso, end_iso, has_time, parent_id, _now_iso(), int(task_id)))
+            """, (title, notes, due_date_iso, start_iso, end_iso, has_time, parent_id, tag_id, project_id, _now_iso(), int(task_id)))
             self._enqueue("tasks", "upsert", {
                 "id": int(task_id),
                 "title": title, "notes": notes,
@@ -169,13 +205,15 @@ class LocalDB:
                 "start_ts": start_iso, "end_ts": end_iso,
                 "has_time": bool(has_time),
                 "parent_id": parent_id,
+                "tag_id": tag_id,
+                "project_id": project_id,
             })
             tid = int(task_id)
         else:
             cur = self._conn.execute("""
-                INSERT INTO tasks(title, notes, due_date, start_ts, end_ts, has_time, parent_id, created_at, updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?)
-            """, (title, notes, due_date_iso, start_iso, end_iso, has_time, parent_id, _now_iso(), _now_iso()))
+                INSERT INTO tasks(title, notes, due_date, start_ts, end_ts, has_time, parent_id, tag_id, project_id, created_at, updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            """, (title, notes, due_date_iso, start_iso, end_iso, has_time, parent_id, tag_id, project_id, _now_iso(), _now_iso()))
             tid = int(cur.lastrowid)
             self._enqueue("tasks", "upsert", {
                 "id": tid,
@@ -184,6 +222,8 @@ class LocalDB:
                 "start_ts": start_iso, "end_ts": end_iso,
                 "has_time": bool(has_time),
                 "parent_id": parent_id,
+                "tag_id": tag_id,
+                "project_id": project_id,
             })
         self._conn.commit()
         return tid
@@ -220,4 +260,20 @@ class LocalDB:
             (parent_id, _now_iso(), int(task_id)),
         )
         self._enqueue("tasks", "upsert", {"id": int(task_id), "parent_id": parent_id})
+        self._conn.commit()
+
+    def set_task_tag(self, task_id: int, tag_id: Optional[int]):
+        self._conn.execute(
+            "UPDATE tasks SET tag_id=?, updated_at=? WHERE id=?",
+            (tag_id, _now_iso(), int(task_id)),
+        )
+        self._enqueue("tasks", "upsert", {"id": int(task_id), "tag_id": tag_id})
+        self._conn.commit()
+
+    def set_task_project(self, task_id: int, project_id: Optional[int]):
+        self._conn.execute(
+            "UPDATE tasks SET project_id=?, updated_at=? WHERE id=?",
+            (project_id, _now_iso(), int(task_id)),
+        )
+        self._enqueue("tasks", "upsert", {"id": int(task_id), "project_id": project_id})
         self._conn.commit()

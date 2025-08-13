@@ -8,6 +8,7 @@ class SyncOrchestrator(QtCore.QObject):
     tasksUpdated  = QtCore.pyqtSignal(list)
     eventsUpdated = QtCore.pyqtSignal(list)
     tagsUpdated   = QtCore.pyqtSignal(list)
+    projectsUpdated = QtCore.pyqtSignal(list)
     busyChanged   = QtCore.pyqtSignal(bool)
 
     def __init__(self, parent=None):
@@ -23,8 +24,11 @@ class SyncOrchestrator(QtCore.QObject):
             except: tasks = []
             try:    tags   = api.fetch_tags()
             except: tags   = []
+            try:    projects = api.fetch_projects()
+            except: projects = []
             self.db.replace_all("tasks", tasks)
             self.db.replace_all("tags", tags)
+            self.db.replace_all("projects", projects)
         finally:
             self._emit_all_from_local()
             self._set_busy(False)
@@ -34,6 +38,7 @@ class SyncOrchestrator(QtCore.QObject):
         try:
             tasks = self.db.get_all_tasks()
             tags = self.db.get_tags()
+            projects = self.db.get_projects()
             try:
                 self.db.dequeue_all()
             except Exception:
@@ -45,6 +50,11 @@ class SyncOrchestrator(QtCore.QObject):
             for g in tags:
                 try:
                     api.upsert_tag(g.get("name", ""), g.get("id"))
+                except Exception:
+                    pass
+            for p in projects:
+                try:
+                    api.upsert_project(p.get("name", ""), p.get("id"))
                 except Exception:
                     pass
             for t in tasks:
@@ -68,11 +78,21 @@ class SyncOrchestrator(QtCore.QObject):
         self.db.delete_tag_local(int(tag_id))
         self.tagsUpdated.emit(self.db.get_tags())
 
+    # ---------- PROJECTS ----------
+    def add_project(self, name: str):
+        self.db.add_project_local(name)
+        self.projectsUpdated.emit(self.db.get_projects())
+
+    def delete_project(self, project_id: int):
+        self.db.delete_project_local(int(project_id))
+        self.projectsUpdated.emit(self.db.get_projects())
+
     # ---------- TASKS ----------
     def upsert_task(self, task_id: Optional[int], title: str, notes: str,
                     due_date_iso: Optional[str], start_iso: Optional[str]=None,
-                    end_iso: Optional[str]=None, parent_id: Optional[int]=None) -> int:
-        tid = self.db.upsert_task(task_id, title, notes, due_date_iso, start_iso=start_iso, end_iso=end_iso, parent_id=parent_id)
+                    end_iso: Optional[str]=None, parent_id: Optional[int]=None,
+                    tag_id: Optional[int]=None, project_id: Optional[int]=None) -> int:
+        tid = self.db.upsert_task(task_id, title, notes, due_date_iso, start_iso=start_iso, end_iso=end_iso, parent_id=parent_id, tag_id=tag_id, project_id=project_id)
         self._emit_all_from_local()
         return tid
 
@@ -106,6 +126,7 @@ class SyncOrchestrator(QtCore.QObject):
         self.tasksUpdated.emit(self.db.get_tasks())
         self.eventsUpdated.emit(self.db.get_events())
         self.tagsUpdated.emit(self.db.get_tags())
+        self.projectsUpdated.emit(self.db.get_projects())
 
     def _set_busy(self, b: bool):
         if self._busy != b:

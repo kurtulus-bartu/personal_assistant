@@ -87,3 +87,72 @@ class SlidingSelector(QtWidgets.QFrame):
 
 class TagFolderList(SlidingSelector):
     pass
+
+
+class HorizontalSelector(QtWidgets.QFrame):
+    """Horizontal single-selection button row."""
+    changed = QtCore.pyqtSignal(int)
+
+    def __init__(self, parent=None, item_width: int = 100, item_height: int = 36):
+        super().__init__(parent)
+        self._buttons: Dict[int, QtWidgets.QPushButton] = {}
+        self._current_id: int | None = None
+        self._item_w = item_width
+        self._item_h = item_height
+
+        self.setStyleSheet(f"""
+        QPushButton {{
+            color: {COLOR_TEXT};
+            background: transparent;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 6px 12px;
+        }}
+        QPushButton:checked {{
+            background: {COLOR_ACCENT};
+            color: {COLOR_TEXT};
+            border-color: {COLOR_ACCENT};
+        }}
+        """)
+
+        self._wrap = QtWidgets.QWidget()
+        self._layout = QtWidgets.QHBoxLayout(self._wrap)
+        self._layout.setContentsMargins(6, 6, 6, 6)
+        self._layout.setSpacing(6)
+
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self._wrap)
+
+    def setItems(self, items: List[Tuple[int, str]]):
+        while self._layout.count():
+            it = self._layout.takeAt(0)
+            if it and it.widget():
+                it.widget().deleteLater()
+        self._buttons.clear()
+        for _id, label in items:
+            btn = QtWidgets.QPushButton(label, self._wrap)
+            btn.setCheckable(True)
+            btn.setAutoExclusive(True)
+            btn.setFixedSize(self._item_w, self._item_h)
+            btn.clicked.connect(lambda _=False, i=_id: self._on_clicked(i))
+            self._buttons[_id] = btn
+            self._layout.addWidget(btn)
+        if items:
+            self.setCurrentById(items[0][0])
+
+    def _on_clicked(self, _id: int):
+        self.setCurrentById(_id)
+        self.changed.emit(_id)
+
+    def setCurrentById(self, _id: int):
+        if _id not in self._buttons:
+            return
+        if self._current_id is not None and self._current_id in self._buttons:
+            self._buttons[self._current_id].setChecked(False)
+        self._buttons[_id].setChecked(True)
+        self._current_id = _id
+
+
+class ProjectButtonRow(HorizontalSelector):
+    pass

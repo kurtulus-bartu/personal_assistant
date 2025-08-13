@@ -71,9 +71,42 @@ def delete_tag(tag_id: int) -> bool:
     r.raise_for_status()
     return True
 
+# ---------------- PROJECTS ----------------
+
+def fetch_projects() -> list[dict]:
+    _ensure()
+    url = f"{SUPABASE_URL}/rest/v1/projects?select=*&order=updated_at.desc"
+    r = requests.get(url, headers=_headers())
+    r.raise_for_status()
+    return r.json()
+
+def upsert_project(name: str, project_id: int | None = None) -> dict:
+    _ensure()
+    url = f"{SUPABASE_URL}/rest/v1/projects?on_conflict=id"
+    payload = {"name": name}
+    if project_id is not None:
+        payload["id"] = int(project_id)
+    r = requests.post(
+        url,
+        headers=_headers("return=representation,resolution=merge-duplicates"),
+        json=payload,
+    )
+    r.raise_for_status()
+    out = r.json()
+    return out[0] if isinstance(out, list) and out else out
+
+def delete_project(project_id: int) -> bool:
+    _ensure()
+    url = f"{SUPABASE_URL}/rest/v1/projects?id=eq.{int(project_id)}"
+    r = requests.delete(url, headers=_headers())
+    if r.status_code in (200, 204):
+        return True
+    r.raise_for_status()
+    return True
+
 # ---------------- TASKS ----------------
 
-TASK_FIELDS = "id,title,notes,status,tag_id,has_time,due_date,start_ts,end_ts,parent_id,updated_at"
+TASK_FIELDS = "id,title,notes,status,tag_id,project_id,has_time,due_date,start_ts,end_ts,parent_id,updated_at"
 
 def fetch_tasks() -> list[dict]:
     _ensure()
@@ -99,6 +132,8 @@ def upsert_task(row: dict) -> dict:
     if "status" in row:  payload["status"]  = row["status"]
     if "tag_id" in row and row["tag_id"] is not None:
         payload["tag_id"] = int(row["tag_id"])
+    if "project_id" in row and row["project_id"] is not None:
+        payload["project_id"] = int(row["project_id"])
     if "has_time" in row:
         payload["has_time"] = bool(row["has_time"])
     if "due_date" in row and row["due_date"]:
@@ -134,7 +169,7 @@ def delete_task(task_id: int) -> bool:
 def wipe_all():
     """Delete all rows from tags and tasks tables."""
     _ensure()
-    for tbl in ("tasks", "tags"):
+    for tbl in ("tasks", "tags", "projects"):
         url = f"{SUPABASE_URL}/rest/v1/{tbl}?id=gt.0"
         r = requests.delete(url, headers=_headers())
         if r.status_code not in (200, 204):

@@ -13,6 +13,7 @@ from theme.colors import (
     COLOR_ACCENT,
 )
 from services.sync_orchestrator import SyncOrchestrator
+from widgets.core.selectors import ProjectButtonRow
 
 # Diyalog (tek ekran – task/event)
 try:
@@ -45,6 +46,12 @@ class PlannerPage(QtWidgets.QWidget):
         super().__init__(parent)
         self._anchor_date = QtCore.QDate.currentDate()
         self._view_mode = "weekly"
+        self._current_tag: int | None = None
+        self._current_project: int | None = None
+        self._all_tasks: list[dict] = []
+        self._all_projects: list[dict] = []
+        self._all_tags: list[dict] = []
+        self._all_events: list[dict] = []
         self._build_ui()
         self._wire_sync()
 
@@ -149,11 +156,14 @@ class PlannerPage(QtWidgets.QWidget):
         content_l.addWidget(self.stacked)
         h.addWidget(content, 1)
 
-        # Sağ panel: Kanban
+        # Sağ panel: Kanban + Proje butonları
         self.kanban = KanbanBoard()
         right = QtWidgets.QWidget(); right.setFixedWidth(360)
         r_l = QtWidgets.QVBoxLayout(right); r_l.setContentsMargins(12, 12, 12, 12); r_l.setSpacing(8)
-        r_l.addWidget(self.kanban)
+        self.project_bar = ProjectButtonRow()
+        self.project_bar.changed.connect(self.on_project_changed)
+        r_l.addWidget(self.project_bar)
+        r_l.addWidget(self.kanban, 1)
         h.addWidget(right)
 
         root.addWidget(central, 1)
@@ -186,6 +196,7 @@ class PlannerPage(QtWidgets.QWidget):
         self.store.tasksUpdated.connect(self._apply_tasks)
         self.store.eventsUpdated.connect(self._apply_events)
         self.store.tagsUpdated.connect(self._apply_tags)
+        self.store.projectsUpdated.connect(self._apply_projects)
         if hasattr(self.left, "attachStore"):
             self.left.attachStore(self.store)
         self.store.bootstrap()
@@ -267,7 +278,13 @@ class PlannerPage(QtWidgets.QWidget):
             opts = [(int(t["id"]), t.get("title", "")) for t in tasks]
         except Exception:
             pass
-        dlg = EventTaskDialog(m, self, parent_options=opts)
+        tag_opts = [(int(t["id"]), t.get("name", "")) for t in self._all_tags]
+        proj_opts = [(int(p["id"]), p.get("name", "")) for p in self._all_projects]
+        if self._current_tag is not None:
+            m.tag_id = int(self._current_tag)
+        if self._current_project is not None:
+            m.project_id = int(self._current_project)
+        dlg = EventTaskDialog(m, self, parent_options=opts, tag_options=tag_opts, project_options=proj_opts)
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
         dlg.exec()
@@ -286,13 +303,17 @@ class PlannerPage(QtWidgets.QWidget):
         m.date = self._anchor_date
         m.start = None; m.end = None
         m.parent_id = (t or {}).get("parent_id")
+        m.tag_id = (t or {}).get("tag_id")
+        m.project_id = (t or {}).get("project_id")
         opts = []
         try:
             tasks = db.get_tasks() if db else []
             opts = [(int(x["id"]), x.get("title", "")) for x in tasks if int(x["id"]) != int(task_id)]
         except Exception:
             pass
-        dlg = EventTaskDialog(m, self, parent_options=opts)
+        tag_opts = [(int(tg["id"]), tg.get("name", "")) for tg in self._all_tags]
+        proj_opts = [(int(p["id"]), p.get("name", "")) for p in self._all_projects]
+        dlg = EventTaskDialog(m, self, parent_options=opts, tag_options=tag_opts, project_options=proj_opts)
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
         dlg.exec()
@@ -306,7 +327,9 @@ class PlannerPage(QtWidgets.QWidget):
         m.start = QtCore.QTime(evb.start.hour, evb.start.minute)
         m.end   = QtCore.QTime(evb.end.hour, evb.end.minute)
         m.rrule   = getattr(evb, "rrule", None)
-        dlg = EventTaskDialog(m, self)
+        tag_opts = [(int(tg["id"]), tg.get("name", "")) for tg in self._all_tags]
+        proj_opts = [(int(p["id"]), p.get("name", "")) for p in self._all_projects]
+        dlg = EventTaskDialog(m, self, tag_options=tag_opts, project_options=proj_opts)
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
         dlg.exec()
@@ -315,7 +338,9 @@ class PlannerPage(QtWidgets.QWidget):
         start_iso = _to_iso_dt(model.date, model.start) if model.start and model.end else None
         end_iso   = _to_iso_dt(model.date, model.end) if model.start and model.end else None
         due_iso   = _to_iso_qdate(model.date)
-        tid = self.store.upsert_task(model.id, model.title or "Untitled", model.notes or "", due_iso, start_iso=start_iso, end_iso=end_iso, parent_id=model.parent_id)
+        tid = self.store.upsert_task(model.id, model.title or "Untitled", model.notes or "", due_iso,
+                                    start_iso=start_iso, end_iso=end_iso, parent_id=model.parent_id,
+                                    tag_id=model.tag_id, project_id=model.project_id)
         if not model.id:
             model.id = tid
 
@@ -325,20 +350,16 @@ class PlannerPage(QtWidgets.QWidget):
 
     # ---------------- Apply data to UI ----------------
     def _apply_tasks(self, tasks: list[dict]):
-        # has_time=1 olanları gizle
-        filtered = [t for t in tasks if not bool(t.get("has_time", 0))]
-        if hasattr(self.kanban, "set_tasks"):
-            self.kanban.set_tasks(filtered)
+        self._all_tasks = tasks or []
+        self._update_project_buttons()
+        self._filter_tasks_and_update()
 
     def _apply_events(self, events: list[dict]):
-        if hasattr(self.week, "setEvents"):
-            try: self.week.setEvents(events)
-            except Exception: pass
-        if hasattr(self.day, "setEvents"):
-            try: self.day.setEvents(events)
-            except Exception: pass
+        self._all_events = events or []
+        self._filter_events_and_update()
 
     def _apply_tags(self, tags: list[dict]):
+        self._all_tags = tags or []
         items = []
         for t in tags:
             try:
@@ -348,13 +369,66 @@ class PlannerPage(QtWidgets.QWidget):
         if hasattr(self.left, "applyServerTags"): self.left.applyServerTags(items)
         elif hasattr(self.left, "applyTags"):     self.left.applyTags(items)
 
+    def _apply_projects(self, projects: list[dict]):
+        self._all_projects = projects or []
+        self._update_project_buttons()
+
+    def _update_project_buttons(self):
+        items: list[tuple[int, str]] = []
+        if self._all_projects:
+            if self._current_tag is not None:
+                relevant = {int(t.get("project_id")) for t in self._all_tasks if not t.get("has_time") and t.get("project_id") is not None and int(t.get("tag_id") or 0) == int(self._current_tag)}
+            else:
+                relevant = {int(t.get("project_id")) for t in self._all_tasks if not t.get("has_time") and t.get("project_id") is not None}
+            for p in self._all_projects:
+                try:
+                    pid = int(p.get("id"))
+                    if pid in relevant:
+                        items.append((pid, p.get("name", "")))
+                except Exception:
+                    pass
+        self.project_bar.setItems(items)
+        if not items:
+            self._current_project = None
+
+    def _filter_tasks_and_update(self):
+        filtered = [t for t in self._all_tasks if not bool(t.get("has_time", 0))]
+        if self._current_tag is not None:
+            filtered = [t for t in filtered if int(t.get("tag_id") or 0) == int(self._current_tag)]
+        if self._current_project is not None:
+            filtered = [t for t in filtered if int(t.get("project_id") or 0) == int(self._current_project)]
+        if hasattr(self.kanban, "set_tasks"):
+            self.kanban.set_tasks(filtered)
+
+    def _filter_events_and_update(self):
+        evs = self._all_events
+        if self._current_tag is not None:
+            evs = [e for e in evs if int(e.get("tag_id") or 0) == int(self._current_tag)]
+        if self._current_project is not None:
+            evs = [e for e in evs if int(e.get("project_id") or 0) == int(self._current_project)]
+        if hasattr(self.week, "setEvents"):
+            try: self.week.setEvents(evs)
+            except Exception: pass
+        if hasattr(self.day, "setEvents"):
+            try: self.day.setEvents(evs)
+            except Exception: pass
+
     # ---------------- Sol panel slotları ----------------
     def on_view_changed(self, mode: str):
         self._view_mode = mode
         self.stacked.setCurrentIndex(0 if mode == "weekly" else 1)
 
     def on_tags_changed(self, s: set):
-        pass
+        self._current_tag = next(iter(s)) if s else None
+        self._current_project = None
+        self._update_project_buttons()
+        self._filter_tasks_and_update()
+        self._filter_events_and_update()
+
+    def on_project_changed(self, project_id: int):
+        self._current_project = project_id
+        self._filter_tasks_and_update()
+        self._filter_events_and_update()
 
     def on_anchor_date_changed(self, qdate: QtCore.QDate):
         self._anchor_date = qdate

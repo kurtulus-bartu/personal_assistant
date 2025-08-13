@@ -17,6 +17,12 @@ ALTER TABLE IF EXISTS public.tasks
 ALTER TABLE IF EXISTS public.tasks
   ADD COLUMN IF NOT EXISTS end_ts   timestamptz NULL;
 
+ALTER TABLE IF EXISTS public.tasks
+  ADD COLUMN IF NOT EXISTS tag_id integer NULL;
+
+ALTER TABLE IF EXISTS public.tasks
+  ADD COLUMN IF NOT EXISTS project_id integer NULL;
+
 -- 2) Faydalı indeksler
 CREATE INDEX IF NOT EXISTS idx_tasks_starts_at ON public.tasks (start_ts);
 

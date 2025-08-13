@@ -15,17 +15,24 @@ class ItemModel:
     rrule: str | None = None
     task_id: Optional[int] = None  # if event
     parent_id: Optional[int] = None
+    tag_id: Optional[int] = None
+    project_id: Optional[int] = None
 
 class EventTaskDialog(QtWidgets.QDialog):
     saved = QtCore.pyqtSignal(object)    # ItemModel
     deleted = QtCore.pyqtSignal(object)  # ItemModel
 
-    def __init__(self, model: ItemModel, parent=None, parent_options: list[tuple[int,str]] | None = None):
+    def __init__(self, model: ItemModel, parent=None,
+                 parent_options: list[tuple[int,str]] | None = None,
+                 tag_options: list[tuple[int,str]] | None = None,
+                 project_options: list[tuple[int,str]] | None = None):
         super().__init__(parent)
         self.setWindowTitle("Edit")
         self.setModal(True)
         self._model = model
         self._parent_options = parent_options or []
+        self._tag_options = tag_options or []
+        self._project_options = project_options or []
         self.setMinimumWidth(480)
 
         main = QtWidgets.QVBoxLayout(self)
@@ -49,6 +56,26 @@ class EventTaskDialog(QtWidgets.QDialog):
         parent_row.addWidget(QtWidgets.QLabel("Parent"))
         parent_row.addWidget(self.cmb_parent, 1)
         main.addLayout(parent_row)
+
+        # Tag selection
+        tag_row = QtWidgets.QHBoxLayout(); tag_row.setSpacing(8)
+        self.cmb_tag = QtWidgets.QComboBox()
+        self.cmb_tag.addItem("None", None)
+        for tid, name in self._tag_options:
+            self.cmb_tag.addItem(name, tid)
+        tag_row.addWidget(QtWidgets.QLabel("Tag"))
+        tag_row.addWidget(self.cmb_tag, 1)
+        main.addLayout(tag_row)
+
+        # Project selection
+        proj_row = QtWidgets.QHBoxLayout(); proj_row.setSpacing(8)
+        self.cmb_project = QtWidgets.QComboBox()
+        self.cmb_project.addItem("None", None)
+        for pid, name in self._project_options:
+            self.cmb_project.addItem(name, pid)
+        proj_row.addWidget(QtWidgets.QLabel("Project"))
+        proj_row.addWidget(self.cmb_project, 1)
+        main.addLayout(proj_row)
 
         # Date + time row
         row = QtWidgets.QHBoxLayout(); row.setSpacing(8)
@@ -119,6 +146,14 @@ class EventTaskDialog(QtWidgets.QDialog):
                 self.cmb_parent.setCurrentIndex(idx)
         else:
             self.cmb_parent.setCurrentIndex(0)
+        if m.tag_id is not None:
+            idx = self.cmb_tag.findData(int(m.tag_id))
+            if idx != -1:
+                self.cmb_tag.setCurrentIndex(idx)
+        if m.project_id is not None:
+            idx = self.cmb_project.findData(int(m.project_id))
+            if idx != -1:
+                self.cmb_project.setCurrentIndex(idx)
 
     def _on_delete(self):
         self.deleted.emit(self._model)
@@ -147,5 +182,9 @@ class EventTaskDialog(QtWidgets.QDialog):
             m.rrule = self.edt_rrule.text().strip() or None
         data = self.cmb_parent.currentData()
         m.parent_id = int(data) if data is not None else None
+        data = self.cmb_tag.currentData()
+        m.tag_id = int(data) if data is not None else None
+        data = self.cmb_project.currentData()
+        m.project_id = int(data) if data is not None else None
         self.saved.emit(m)
         self.accept()
