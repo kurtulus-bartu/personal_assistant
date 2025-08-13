@@ -48,11 +48,11 @@ BEGIN
     WHERE schemaname = 'public' AND tablename = 'tasks'
   ) THEN
     EXECUTE 'CREATE INDEX IF NOT EXISTS idx_tasks_starts_at ON public.tasks (start_ts)';
-    EXECUTE $$CREATE INDEX IF NOT EXISTS idx_tasks_unscheduled ON public.tasks (id)
-      WHERE COALESCE(has_time, false) = false$$;
-    EXECUTE $$CREATE OR REPLACE VIEW public.tasks_unscheduled AS
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_tasks_unscheduled ON public.tasks (id)
+      WHERE COALESCE(has_time, false) = false';
+    EXECUTE 'CREATE OR REPLACE VIEW public.tasks_unscheduled AS
       SELECT * FROM public.tasks
-      WHERE COALESCE(has_time, false) = false$$;
+      WHERE COALESCE(has_time, false) = false';
   END IF;
 END $$;
 
