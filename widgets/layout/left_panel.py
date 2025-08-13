@@ -69,8 +69,13 @@ class LeftPanel(QtWidgets.QWidget):
 
     # ---- UI handlers ----
     def _on_tag_changed(self, tid: int):
-        self._current_tid = tid
-        self.tagsChanged.emit({tid})
+        if tid == 0:
+            # Seçim kaldırıldı -> tüm etiketler
+            self._current_tid = None
+            self.tagsChanged.emit(set())
+        else:
+            self._current_tid = tid
+            self.tagsChanged.emit({tid})
 
     def _toggle_new_bar(self):
         show = not self.new_bar.isVisible()

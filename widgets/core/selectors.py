@@ -3,8 +3,11 @@ from PyQt6 import QtCore, QtWidgets
 from theme.colors import COLOR_TEXT, COLOR_SECONDARY_BG, COLOR_ACCENT
 
 class SlidingSelector(QtWidgets.QFrame):
-    """Dikey tek-seçim klasör listesi (şeffaf zemin, aktif= koyu gri arka plan)."""
-    changed = QtCore.pyqtSignal(int)  # seçilen id
+    """Dikey tek-seçim klasör listesi (şeffaf zemin, aktif= koyu gri arka plan).
+
+    Bir etikete tekrar tıklanınca seçimi kaldırıp tüm etiketleri gösterebilmek
+    için `changed` sinyali 0 değeri yayımlayabilir."""
+    changed = QtCore.pyqtSignal(int)  # seçilen id (0 = tümü)
 
     def __init__(self, parent=None, item_height=36, radius=12):
         super().__init__(parent)
@@ -66,11 +69,17 @@ class SlidingSelector(QtWidgets.QFrame):
             self._layout.addWidget(btn)
             self._id_order.append(_id)
         self._layout.addStretch(1)
-        # varsayılan ilkini seç
-        if self._id_order:
-            self.setCurrentById(self._id_order[0])
+        # başlangıçta hiçbirini seçme
+        self._current_id = None
 
     def _on_clicked(self, _id: int):
+        # Aynı butona tekrar tıklanınca seçimi kaldır
+        if self._current_id == _id:
+            if _id in self._buttons:
+                self._buttons[_id].setChecked(False)
+            self._current_id = None
+            self.changed.emit(0)
+            return
         self.setCurrentById(_id)
         self.changed.emit(_id)
 
@@ -90,8 +99,8 @@ class TagFolderList(SlidingSelector):
 
 
 class HorizontalSelector(QtWidgets.QFrame):
-    """Horizontal single-selection button row."""
-    changed = QtCore.pyqtSignal(int)
+    """Horizontal single-selection button row with toggle-off capability."""
+    changed = QtCore.pyqtSignal(int)  # 0 = tümü
 
     def __init__(self, parent=None, item_width: int = 100, item_height: int = 36):
         super().__init__(parent)
@@ -138,10 +147,16 @@ class HorizontalSelector(QtWidgets.QFrame):
             btn.clicked.connect(lambda _=False, i=_id: self._on_clicked(i))
             self._buttons[_id] = btn
             self._layout.addWidget(btn)
-        if items:
-            self.setCurrentById(items[0][0])
+        # başlangıçta seçim yok
+        self._current_id = None
 
     def _on_clicked(self, _id: int):
+        if self._current_id == _id:
+            if _id in self._buttons:
+                self._buttons[_id].setChecked(False)
+            self._current_id = None
+            self.changed.emit(0)
+            return
         self.setCurrentById(_id)
         self.changed.emit(_id)
 
