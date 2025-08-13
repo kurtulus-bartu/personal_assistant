@@ -7,6 +7,7 @@ class SyncService(QtCore.QObject):
     tasksUpdated  = QtCore.pyqtSignal(list)
     eventsUpdated = QtCore.pyqtSignal(list)
     tagsUpdated   = QtCore.pyqtSignal(list)
+    projectsUpdated = QtCore.pyqtSignal(list)
     onlineChanged = QtCore.pyqtSignal(bool)
 
     def __init__(self, parent=None, poll_sec: int = 60):
@@ -28,10 +29,12 @@ class SyncService(QtCore.QObject):
         try:
             tasks = api.fetch_tasks()
             tags  = api.fetch_tags()
+            projects = api.fetch_projects()
             events = [t for t in tasks if t.get("has_time") and t.get("start_ts") and t.get("end_ts")]
             self.tasksUpdated.emit(tasks)
             self.eventsUpdated.emit(events)
             self.tagsUpdated.emit(tags)
+            self.projectsUpdated.emit(projects)
             if not self._online:
                 self._online = True
                 self.onlineChanged.emit(True)
@@ -52,3 +55,9 @@ class SyncService(QtCore.QObject):
 
     def delete_tag(self, tag_id: int) -> bool:
         return api.delete_tag(tag_id)
+
+    def upsert_project(self, name: str, project_id: int | None = None) -> Dict[str, Any]:
+        return api.upsert_project(name, project_id)
+
+    def delete_project(self, project_id: int) -> bool:
+        return api.delete_project(project_id)
