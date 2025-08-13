@@ -80,7 +80,11 @@ class SyncOrchestrator(QtCore.QObject):
 
     # ---------- PROJECTS ----------
     def add_project(self, name: str):
-        self.db.add_project_local(name)
+        pid = self.db.add_project_local(name)
+        try:
+            api.upsert_project(name, pid)
+        except Exception:
+            pass
         self.projectsUpdated.emit(self.db.get_projects())
 
     def delete_project(self, project_id: int):

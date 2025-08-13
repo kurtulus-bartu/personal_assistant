@@ -396,7 +396,10 @@ class PlannerPage(QtWidgets.QWidget):
                 except Exception:
                     pass
         self.project_bar.setItems(items)
-        if not items:
+        ids = {pid for pid, _ in items}
+        if self._current_project in ids:
+            self.project_bar.setCurrentById(int(self._current_project))
+        else:
             self._current_project = None
 
     def _filter_tasks_and_update(self):
@@ -434,7 +437,7 @@ class PlannerPage(QtWidgets.QWidget):
         self._filter_events_and_update()
 
     def on_project_changed(self, project_id: int):
-        self._current_project = project_id
+        self._current_project = project_id or None
         self._filter_tasks_and_update()
         self._filter_events_and_update()
 
