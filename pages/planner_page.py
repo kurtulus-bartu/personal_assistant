@@ -9,6 +9,7 @@ from utils.icons import make_icon_pm_pair
 from theme.colors import (
     COLOR_PRIMARY_BG,
     COLOR_SECONDARY_BG,
+    COLOR_TEXT,
     COLOR_TEXT_MUTED,
     COLOR_ACCENT,
 )
@@ -164,9 +165,24 @@ class PlannerPage(QtWidgets.QWidget):
         self.project_bar.changed.connect(self.on_project_changed)
         r_l.addWidget(self.project_bar)
         r_l.addWidget(self.kanban, 1)
-        self.btn_add_project = QtWidgets.QPushButton("Add Project")
+
+        proj_row = QtWidgets.QHBoxLayout(); proj_row.setSpacing(8)
+        self.btn_add_project = QtWidgets.QPushButton("+ New Project")
+        self.btn_add_project.setFixedHeight(36)
+        self.btn_add_project.setStyleSheet(
+            f"background:{COLOR_SECONDARY_BG}; color:{COLOR_TEXT}; border:1px solid #3a3a3a; border-radius:10px;"
+        )
         self.btn_add_project.clicked.connect(self._on_add_project_clicked)
-        r_l.addWidget(self.btn_add_project)
+        proj_row.addWidget(self.btn_add_project)
+
+        self.btn_delete_project = QtWidgets.QPushButton("Delete Project")
+        self.btn_delete_project.setFixedHeight(36)
+        self.btn_delete_project.setStyleSheet(
+            f"background:{COLOR_SECONDARY_BG}; color:{COLOR_TEXT}; border:1px solid #3a3a3a; border-radius:10px;"
+        )
+        self.btn_delete_project.clicked.connect(self._on_delete_project_clicked)
+        proj_row.addWidget(self.btn_delete_project)
+        r_l.addLayout(proj_row)
         h.addWidget(right)
 
         root.addWidget(central, 1)
@@ -215,6 +231,15 @@ class PlannerPage(QtWidgets.QWidget):
         name, ok = QtWidgets.QInputDialog.getText(self, "Add Project", "Project name:")
         if ok and name.strip():
             self.store.add_project(name.strip())
+
+    def _on_delete_project_clicked(self):
+        if self._current_project is None:
+            return
+        pid = int(self._current_project)
+        self.store.delete_project(pid)
+        self._current_project = None
+        self._filter_tasks_and_update()
+        self._filter_events_and_update()
 
     # ---------------- Event Filter: double-click ----------------
     def eventFilter(self, obj: QtCore.QObject, ev: QtCore.QEvent) -> bool:
@@ -383,18 +408,12 @@ class PlannerPage(QtWidgets.QWidget):
 
     def _update_project_buttons(self):
         items: list[tuple[int, str]] = []
-        if self._all_projects:
-            if self._current_tag is not None:
-                relevant = {int(t.get("project_id")) for t in self._all_tasks if not t.get("has_time") and t.get("project_id") is not None and int(t.get("tag_id") or 0) == int(self._current_tag)}
-            else:
-                relevant = {int(t.get("project_id")) for t in self._all_tasks if not t.get("has_time") and t.get("project_id") is not None}
-            for p in self._all_projects:
-                try:
-                    pid = int(p.get("id"))
-                    if pid in relevant:
-                        items.append((pid, p.get("name", "")))
-                except Exception:
-                    pass
+        for p in self._all_projects:
+            try:
+                pid = int(p.get("id"))
+                items.append((pid, p.get("name", "")))
+            except Exception:
+                pass
         self.project_bar.setItems(items)
         ids = {pid for pid, _ in items}
         if self._current_project in ids:
