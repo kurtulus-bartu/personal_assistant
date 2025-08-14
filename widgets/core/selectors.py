@@ -64,7 +64,7 @@ class SlidingSelector(QtWidgets.QFrame):
             btn.setAutoExclusive(True)
             btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
             btn.setFixedHeight(self._item_h)
-            btn.clicked.connect(lambda _=False, i=_id: self._on_clicked(i))
+            btn.pressed.connect(lambda i=_id: self._on_clicked(i))
             self._buttons[_id] = btn
             self._layout.addWidget(btn)
             self._id_order.append(_id)
@@ -144,7 +144,7 @@ class HorizontalSelector(QtWidgets.QFrame):
             btn.setCheckable(True)
             btn.setAutoExclusive(True)
             btn.setFixedSize(self._item_w, self._item_h)
-            btn.clicked.connect(lambda _=False, i=_id: self._on_clicked(i))
+            btn.pressed.connect(lambda i=_id: self._on_clicked(i))
             self._buttons[_id] = btn
             self._layout.addWidget(btn)
         # başlangıçta seçim yok
@@ -169,5 +169,27 @@ class HorizontalSelector(QtWidgets.QFrame):
         self._current_id = _id
 
 
-class ProjectButtonRow(HorizontalSelector):
-    pass
+class ProjectButtonRow(QtWidgets.QScrollArea):
+    """Horizontal project selector with automatic scroll when overflowing."""
+    changed = QtCore.pyqtSignal(int)
+
+    def __init__(self, parent=None, item_width: int = 100, item_height: int = 36):
+        super().__init__(parent)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setWidgetResizable(False)
+        self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+
+        self._inner = HorizontalSelector(item_width=item_width, item_height=item_height)
+        self._inner.changed.connect(self.changed.emit)
+        # İç widget genişliği içeriğe göre ayarlansın
+        self._inner.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        self.setWidget(self._inner)
+        self.setFixedHeight(item_height + 12)
+
+    def setItems(self, items: List[Tuple[int, str]]):
+        self._inner.setItems(items)
+        self._inner.adjustSize()
+
+    def setCurrentById(self, _id: int):
+        self._inner.setCurrentById(_id)
