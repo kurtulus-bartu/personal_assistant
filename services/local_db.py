@@ -247,11 +247,22 @@ class LocalDB:
             UPDATE tasks SET start_ts=?, end_ts=?, has_time=?, updated_at=?
             WHERE id=?
         """, (start_iso, end_iso, has_time, _now_iso(), int(task_id)))
-        self._enqueue("tasks", "upsert", {
+        payload = {
             "id": int(task_id),
-            "start_ts": start_iso, "end_ts": end_iso,
-            "has_time": bool(has_time)
-        })
+            "start_ts": start_iso,
+            "end_ts": end_iso,
+            "has_time": bool(has_time),
+        }
+        row = self._conn.execute(
+            "SELECT tag_id, project_id FROM tasks WHERE id=?",
+            (int(task_id),),
+        ).fetchone()
+        if row:
+            if row["tag_id"] is not None:
+                payload["tag_id"] = int(row["tag_id"])
+            if row["project_id"] is not None:
+                payload["project_id"] = int(row["project_id"])
+        self._enqueue("tasks", "upsert", payload)
         self._conn.commit()
 
     def set_task_parent(self, task_id: int, parent_id: Optional[int]):

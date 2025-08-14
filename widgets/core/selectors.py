@@ -1,5 +1,5 @@
 from typing import List, Tuple, Dict
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtWidgets, QtGui
 from theme.colors import COLOR_TEXT, COLOR_SECONDARY_BG, COLOR_ACCENT
 
 class SlidingSelector(QtWidgets.QFrame):
@@ -61,10 +61,9 @@ class SlidingSelector(QtWidgets.QFrame):
         for _id, label in items:
             btn = QtWidgets.QPushButton(label, self._wrap)
             btn.setCheckable(True)
-            btn.setAutoExclusive(True)
             btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
             btn.setFixedHeight(self._item_h)
-            btn.pressed.connect(lambda i=_id: self._on_clicked(i))
+            btn.clicked.connect(lambda checked, i=_id: self._on_clicked(i, checked))
             self._buttons[_id] = btn
             self._layout.addWidget(btn)
             self._id_order.append(_id)
@@ -72,16 +71,15 @@ class SlidingSelector(QtWidgets.QFrame):
         # başlangıçta hiçbirini seçme
         self._current_id = None
 
-    def _on_clicked(self, _id: int):
-        # Aynı butona tekrar tıklanınca seçimi kaldır
-        if self._current_id == _id:
-            if _id in self._buttons:
-                self._buttons[_id].setChecked(False)
+    def _on_clicked(self, _id: int, checked: bool):
+        if checked:
+            if self._current_id is not None and self._current_id in self._buttons:
+                self._buttons[self._current_id].setChecked(False)
+            self._current_id = _id
+            self.changed.emit(_id)
+        else:
             self._current_id = None
             self.changed.emit(0)
-            return
-        self.setCurrentById(_id)
-        self.changed.emit(_id)
 
     def currentId(self):
         return self._current_id
@@ -142,23 +140,22 @@ class HorizontalSelector(QtWidgets.QFrame):
         for _id, label in items:
             btn = QtWidgets.QPushButton(label, self._wrap)
             btn.setCheckable(True)
-            btn.setAutoExclusive(True)
             btn.setFixedSize(self._item_w, self._item_h)
-            btn.pressed.connect(lambda i=_id: self._on_clicked(i))
+            btn.clicked.connect(lambda checked, i=_id: self._on_clicked(i, checked))
             self._buttons[_id] = btn
             self._layout.addWidget(btn)
         # başlangıçta seçim yok
         self._current_id = None
 
-    def _on_clicked(self, _id: int):
-        if self._current_id == _id:
-            if _id in self._buttons:
-                self._buttons[_id].setChecked(False)
+    def _on_clicked(self, _id: int, checked: bool):
+        if checked:
+            if self._current_id is not None and self._current_id in self._buttons:
+                self._buttons[self._current_id].setChecked(False)
+            self._current_id = _id
+            self.changed.emit(_id)
+        else:
             self._current_id = None
             self.changed.emit(0)
-            return
-        self.setCurrentById(_id)
-        self.changed.emit(_id)
 
     def setCurrentById(self, _id: int):
         if _id not in self._buttons:
@@ -177,7 +174,7 @@ class ProjectButtonRow(QtWidgets.QScrollArea):
         super().__init__(parent)
         # PyQt6 relocated ScrollBarPolicy enums under Qt.ScrollBarPolicy
         self.setHorizontalScrollBarPolicy(
-            QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
         self.setVerticalScrollBarPolicy(
             QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -198,6 +195,13 @@ class ProjectButtonRow(QtWidgets.QScrollArea):
     def setItems(self, items: List[Tuple[int, str]]):
         self._inner.setItems(items)
         self._inner.adjustSize()
+        QtCore.QTimer.singleShot(0, self._inner.adjustSize)
 
     def setCurrentById(self, _id: int):
         self._inner.setCurrentById(_id)
+
+    def wheelEvent(self, e: QtGui.QWheelEvent):
+        self.horizontalScrollBar().setValue(
+            self.horizontalScrollBar().value() - e.angleDelta().y()
+        )
+        e.accept()
