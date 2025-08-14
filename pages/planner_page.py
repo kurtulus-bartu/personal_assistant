@@ -319,6 +319,40 @@ class PlannerPage(QtWidgets.QWidget):
         return super().eventFilter(obj, ev)
 
     # ---------------- Diyalog Aç/Kaydet/Sil ----------------
+    def _build_parent_options(
+        self,
+        tasks: list[dict],
+        tag_id: int | None,
+        project_id: int | None,
+        exclude_id: int | None = None,
+    ) -> list[tuple[int, str]]:
+        """Filter tasks to be used as parent candidates.
+
+        Only tasks from the same project are allowed. If the task isn't
+        assigned to any project, fallback to filtering by tag. Optionally the
+        current task can be excluded via ``exclude_id``.
+        """
+
+        if project_id is not None:
+            tasks = [
+                t
+                for t in tasks
+                if t.get("project_id") is not None
+                and int(t.get("project_id")) == int(project_id)
+            ]
+        elif tag_id is not None:
+            tasks = [
+                t
+                for t in tasks
+                if t.get("tag_id") is not None
+                and int(t.get("tag_id")) == int(tag_id)
+            ]
+
+        if exclude_id is not None:
+            tasks = [t for t in tasks if int(t.get("id")) != int(exclude_id)]
+
+        return [(int(t["id"]), t.get("title", "")) for t in tasks]
+
     def _open_new_task_dialog(self, date: QtCore.QDate, start: QtCore.QTime, end: QtCore.QTime, default_has_time: bool):
         if not EventTaskDialog:
             return
@@ -329,13 +363,12 @@ class PlannerPage(QtWidgets.QWidget):
             m.start = start; m.end = end
         else:
             m.start = None;  m.end = None
-        opts = []
+        tasks = []
         try:
             db = getattr(self.store, "db", None)
             tasks = db.get_tasks() if db else []
-            opts = [(int(t["id"]), t.get("title", "")) for t in tasks]
         except Exception:
-            pass
+            tasks = []
         tag_opts = [(int(t["id"]), t.get("name", "")) for t in self._all_tags]
         proj_opts = [
             (int(p["id"]), p.get("name", ""), int(p.get("tag_id")) if p.get("tag_id") is not None else None)
@@ -345,6 +378,7 @@ class PlannerPage(QtWidgets.QWidget):
             m.tag_id = int(self._current_tag)
         if self._current_project is not None:
             m.project_id = int(self._current_project)
+        opts = self._build_parent_options(tasks, m.tag_id, m.project_id)
         dlg = EventTaskDialog(m, self, parent_options=opts, tag_options=tag_opts, project_options=proj_opts)
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
@@ -366,12 +400,12 @@ class PlannerPage(QtWidgets.QWidget):
         m.parent_id = (t or {}).get("parent_id")
         m.tag_id = (t or {}).get("tag_id")
         m.project_id = (t or {}).get("project_id")
-        opts = []
+        tasks = []
         try:
             tasks = db.get_tasks() if db else []
-            opts = [(int(x["id"]), x.get("title", "")) for x in tasks if int(x["id"]) != int(task_id)]
         except Exception:
-            pass
+            tasks = []
+        opts = self._build_parent_options(tasks, m.tag_id, m.project_id, exclude_id=task_id)
         tag_opts = [(int(tg["id"]), tg.get("name", "")) for tg in self._all_tags]
         proj_opts = [
             (int(p["id"]), p.get("name", ""), int(p.get("tag_id")) if p.get("tag_id") is not None else None)
