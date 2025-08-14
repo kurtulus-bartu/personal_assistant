@@ -53,8 +53,11 @@ class LocalDB:
         c.execute("""
         CREATE TABLE IF NOT EXISTS projects(
             id INTEGER PRIMARY KEY,
-            name TEXT UNIQUE NOT NULL
+            name TEXT UNIQUE NOT NULL,
+            tag_id INTEGER
         )""")
+        try: c.execute("ALTER TABLE projects ADD COLUMN tag_id INTEGER")
+        except sqlite3.OperationalError: pass
         c.execute("""
         CREATE TABLE IF NOT EXISTS sync_queue(
             id INTEGER PRIMARY KEY,
@@ -122,7 +125,10 @@ class LocalDB:
         elif table == "projects":
             self._conn.execute("DELETE FROM projects")
             for p in rows or []:
-                self._conn.execute("INSERT OR IGNORE INTO projects(id, name) VALUES(?,?)", (p.get("id"), p.get("name")))
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO projects(id, name, tag_id) VALUES(?,?,?)",
+                    (p.get("id"), p.get("name"), p.get("tag_id"))
+                )
 
         self._conn.commit()
 
@@ -175,15 +181,18 @@ class LocalDB:
         self._conn.commit()
 
     # ---------------- PROJECTS ops ----------------
-    def add_project_local(self, name: str) -> int:
+    def add_project_local(self, name: str, tag_id: Optional[int] = None) -> int:
         existing = self._conn.execute(
             "SELECT id FROM projects WHERE name=?", (name,)
         ).fetchone()
         if existing:
             return int(existing["id"])
-        cur = self._conn.execute("INSERT INTO projects(name) VALUES(?)", (name,))
+        cur = self._conn.execute(
+            "INSERT INTO projects(name, tag_id) VALUES(?,?)",
+            (name, tag_id)
+        )
         pid = int(cur.lastrowid)
-        self._enqueue("projects", "insert", {"name": name})
+        self._enqueue("projects", "insert", {"name": name, "tag_id": tag_id})
         self._conn.commit()
         return pid
 

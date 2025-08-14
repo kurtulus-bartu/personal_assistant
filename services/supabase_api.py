@@ -80,12 +80,14 @@ def fetch_projects() -> list[dict]:
     r.raise_for_status()
     return r.json()
 
-def upsert_project(name: str, project_id: int | None = None) -> dict:
+def upsert_project(name: str, project_id: int | None = None, tag_id: int | None = None) -> dict:
     _ensure()
     url = f"{SUPABASE_URL}/rest/v1/projects?on_conflict=id"
     payload = {"name": name}
     if project_id is not None:
         payload["id"] = int(project_id)
+    if tag_id is not None:
+        payload["tag_id"] = int(tag_id)
     r = requests.post(
         url,
         headers=_headers("return=representation,resolution=merge-duplicates"),
