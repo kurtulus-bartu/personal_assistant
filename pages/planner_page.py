@@ -228,9 +228,34 @@ class PlannerPage(QtWidgets.QWidget):
         self.store.refresh()
 
     def _on_add_project_clicked(self):
+        # Tag seçili değilse proje eklenemez
+        if self._current_tag is None:
+            QtWidgets.QMessageBox.warning(
+                self, "Tag required",
+                "Önce bir tag seçmelisin. Tag seçmeden proje eklenemez."
+            )
+            return
+
         name, ok = QtWidgets.QInputDialog.getText(self, "Add Project", "Project name:")
-        if ok and name.strip():
-            self.store.add_project(name.strip())
+        if not(ok and name.strip()):
+            return
+
+        # Tag seçiliyken projenin tag_id’sini vererek ekle
+        tag_id = int(self._current_tag)
+        try:
+            # Muhtemel imza: add_project(name: str, tag_id: int)
+            self.store.add_project(name.strip(), tag_id=tag_id)
+        except TypeError:
+            # Alternatif imza: add_project(name: str, tag_id: int) -> *kwargs yoksa positional dene
+            try:
+                self.store.add_project(name.strip(), tag_id)
+            except TypeError:
+                # Çok eski imza: sadece isim kabul ediyorsa, en azından engelleyelim
+                QtWidgets.QMessageBox.critical(
+                    self, "Unsupported",
+                    "Store.add_project tag_id kabul etmiyor. Services katmanında 'add_project(name, tag_id)' desteği gerekli."
+                )
+                return
 
     def _on_delete_project_clicked(self):
         if self._current_project is None:
@@ -407,41 +432,49 @@ class PlannerPage(QtWidgets.QWidget):
         self._update_project_buttons()
 
     def _update_project_buttons(self):
-        # Enforce: her proje en az bir task altında olmalı; aksi halde hata
-        used_project_ids: set[int] = {
-            int(t.get("project_id")) for t in self._all_tasks
-            if t.get("project_id") is not None
-        }
-        all_project_ids: set[int] = {
-            int(p.get("id")) for p in self._all_projects if p.get("id") is not None
-        }
-        orphans = sorted(all_project_ids - used_project_ids)
-        if orphans:
-            # "Projeler her türlü task altında olmalı" kuralı
-            raise ValueError(f"Orphan projects with no tasks: {orphans}")
-
         items: list[tuple[int, str]] = []
 
-        # Tag seçimi yoksa proje göstermeyiz
+        # Tag seçili değilse hiçbir proje gösterme (ama task'lar gösterilmeye devam edecek)
         if self._current_tag is None:
-            items = []
-        else:
-            # Sadece aktif tag’e ait en az bir task’ı olan projeleri listele
-            allowed: set[int] = {
-                int(t.get("project_id"))
-                for t in self._all_tasks
-                if t.get("project_id") is not None
-                   and int(t.get("tag_id") or 0) == int(self._current_tag)
-            }
-            for p in self._all_projects:
-                try:
-                    pid = int(p.get("id"))
-                    if pid in allowed:
-                        items.append((pid, p.get("name", "")))
-                except Exception:
-                    pass
+            self.project_bar.setItems([])
+            self._current_project = None
+            return
+
+        cur_tid = int(self._current_tag)
+
+        # 1) Proje nesnesinin kendi tag_id'sine bak (var ise)
+        project_ids_for_tag: set[int] = set()
+        for p in self._all_projects:
+            try:
+                pid = int(p.get("id") or 0)
+                if not pid:
+                    continue
+                p_tag = p.get("tag_id", None)
+                if p_tag is not None and int(p_tag) == cur_tid:
+                    project_ids_for_tag.add(pid)
+            except Exception:
+                pass
+
+        # 2) Geri uyum için: task'lar üzerinden o tag'e ait projeleri topla
+        derived_from_tasks: set[int] = {
+            int(t.get("project_id"))
+            for t in self._all_tasks
+            if t.get("project_id") is not None and int(t.get("tag_id") or 0) == cur_tid
+        }
+
+        allowed = project_ids_for_tag | derived_from_tasks
+
+        for p in self._all_projects:
+            try:
+                pid = int(p.get("id") or 0)
+                if pid and pid in allowed:
+                    items.append((pid, p.get("name", "")))
+            except Exception:
+                pass
 
         self.project_bar.setItems(items)
+
+        # Seçili proje hâlâ listede mi?
         ids = {pid for pid, _ in items}
         if self._current_project in ids:
             self.project_bar.setCurrentById(int(self._current_project))
@@ -449,13 +482,12 @@ class PlannerPage(QtWidgets.QWidget):
             self._current_project = None
 
     def _filter_tasks_and_update(self):
-        # Kanban: sadece takvime bağlı olmayan (has_time=0) task'lar
+        # Kanban: sadece takvime bağımsız task'lar
         filtered = [t for t in self._all_tasks if not bool(t.get("has_time", 0))]
 
-        # Proje seçiliyse tag filtresini bastır; sadece o projenin task'ları
         if self._current_project is not None:
+            # Proje seçimi tag'i bastırır
             filtered = [t for t in filtered if int(t.get("project_id") or 0) == int(self._current_project)]
-        # Proje seçili değilse ve tag aktifse, tag’e göre filtrele
         elif self._current_tag is not None:
             filtered = [t for t in filtered if int(t.get("tag_id") or 0) == int(self._current_tag)]
 
@@ -465,8 +497,8 @@ class PlannerPage(QtWidgets.QWidget):
     def _filter_events_and_update(self):
         evs = list(self._all_events)
 
-        # Proje seçiliyse tag filtresini bastır; sadece o projenin event'leri
         if self._current_project is not None:
+            # Proje seçimi tag'i bastırır
             evs = [e for e in evs if int(e.get("project_id") or 0) == int(self._current_project)]
         elif self._current_tag is not None:
             evs = [e for e in evs if int(e.get("tag_id") or 0) == int(self._current_tag)]
