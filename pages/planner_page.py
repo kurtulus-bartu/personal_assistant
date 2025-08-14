@@ -408,10 +408,18 @@ class PlannerPage(QtWidgets.QWidget):
 
     def _update_project_buttons(self):
         items: list[tuple[int, str]] = []
+        allowed: set[int] | None = None
+        if self._current_tag is not None:
+            allowed = {
+                int(t.get("project_id"))
+                for t in self._all_tasks
+                if t.get("project_id") and int(t.get("tag_id") or 0) == int(self._current_tag)
+            }
         for p in self._all_projects:
             try:
                 pid = int(p.get("id"))
-                items.append((pid, p.get("name", "")))
+                if allowed is None or pid in allowed:
+                    items.append((pid, p.get("name", "")))
             except Exception:
                 pass
         self.project_bar.setItems(items)
