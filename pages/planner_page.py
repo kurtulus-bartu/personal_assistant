@@ -1,5 +1,6 @@
 from __future__ import annotations
 from PyQt6 import QtCore, QtGui, QtWidgets
+from datetime import datetime, timedelta
 from widgets.layout.left_panel import LeftPanel
 from widgets.calendar.week_view_editable import CalendarWeekView, EventBlock
 from widgets.calendar.day_view import CalendarDayView
@@ -40,6 +41,71 @@ def _next_round_hour(now: QtCore.QTime | None = None) -> tuple[QtCore.QTime, QtC
     if end <= start:
         end = QtCore.QTime(23, 59, 0)
     return start, end
+
+
+def _expand_rrule_simple(rrule: str, dtstart: datetime, limit: int = 50) -> list[datetime]:
+    """Expand a minimal subset of RRULE strings without external deps.
+
+    Supports ``FREQ=DAILY`` and ``FREQ=WEEKLY`` with optional ``BYDAY``,
+    ``COUNT`` and ``UNTIL`` parts. The first occurrence is always ``dtstart``.
+    """
+
+    rule = rrule.upper()
+    if rule.startswith("RRULE="):
+        rule = rule[6:]
+
+    parts: dict[str, str] = {}
+    for part in rule.split(";"):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            parts[k] = v
+
+    freq = parts.get("FREQ", "DAILY")
+    count = int(parts.get("COUNT", "0")) if parts.get("COUNT") else None
+    until = None
+    if parts.get("UNTIL"):
+        try:
+            until = datetime.strptime(parts["UNTIL"][:8], "%Y%m%d").date()
+        except Exception:
+            pass
+    byday = parts.get("BYDAY")
+
+    dates: list[datetime] = []
+
+    if freq == "DAILY":
+        current = dtstart
+        while True:
+            if until and current.date() > until:
+                break
+            dates.append(current)
+            if count and len(dates) >= count:
+                break
+            if len(dates) >= limit:
+                break
+            current += timedelta(days=1)
+
+    elif freq == "WEEKLY":
+        day_map = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
+        weekdays = [day_map.get(d) for d in (byday.split(",") if byday else []) if day_map.get(d) is not None]
+        if not weekdays:
+            weekdays = [dtstart.weekday()]
+        base_date = dtstart.date()
+        while True:
+            for wd in sorted(set(weekdays)):
+                next_date = base_date + timedelta((wd - base_date.weekday()) % 7)
+                occurrence = datetime.combine(next_date, dtstart.time())
+                if occurrence < dtstart:
+                    continue
+                if until and occurrence.date() > until:
+                    return dates
+                dates.append(occurrence)
+                if count and len(dates) >= count:
+                    return dates
+                if len(dates) >= limit:
+                    return dates
+            base_date += timedelta(days=7)
+
+    return dates[:limit]
 
 
 class PlannerPage(QtWidgets.QWidget):
@@ -465,25 +531,42 @@ class PlannerPage(QtWidgets.QWidget):
         due_iso   = _to_iso_qdate(model.date)
 
         if model.rrule and not model.id:
+            dtstart = (
+                datetime.fromisoformat(start_iso)
+                if start_iso
+                else datetime.fromisoformat(due_iso + "T00:00:00")
+            )
             try:
                 from dateutil.rrule import rrulestr
-                from datetime import datetime
-                dtstart = datetime.fromisoformat(start_iso) if start_iso else datetime.fromisoformat(due_iso + "T00:00:00")
+
                 rule = rrulestr(model.rrule, dtstart=dtstart)
                 dates = list(rule)[:50]
             except Exception:
-                dates = []
+                dates = _expand_rrule_simple(model.rrule, dtstart, limit=50)
+
             series_id = int(QtCore.QDateTime.currentDateTime().toSecsSinceEpoch())
             dur_secs = model.start.secsTo(model.end) if model.start and model.end else 0
-            from datetime import timedelta
             for d in dates:
                 qd = QtCore.QDate(d.year, d.month, d.day)
                 s_iso = d.isoformat() if model.start and model.end else None
-                e_iso = (d + timedelta(seconds=dur_secs)).isoformat() if model.start and model.end else None
+                e_iso = (
+                    (d + timedelta(seconds=dur_secs)).isoformat()
+                    if model.start and model.end
+                    else None
+                )
                 due = _to_iso_qdate(qd)
-                self.store.upsert_task(None, model.title or "Untitled", model.notes or "", due,
-                                       start_iso=s_iso, end_iso=e_iso, parent_id=model.parent_id,
-                                       series_id=series_id, tag_id=model.tag_id, project_id=model.project_id)
+                self.store.upsert_task(
+                    None,
+                    model.title or "Untitled",
+                    model.notes or "",
+                    due,
+                    start_iso=s_iso,
+                    end_iso=e_iso,
+                    parent_id=model.parent_id,
+                    series_id=series_id,
+                    tag_id=model.tag_id,
+                    project_id=model.project_id,
+                )
         else:
             tid = self.store.upsert_task(model.id, model.title or "Untitled", model.notes or "", due_iso,
                                          start_iso=start_iso, end_iso=end_iso, parent_id=model.parent_id,
