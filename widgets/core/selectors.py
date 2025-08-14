@@ -175,8 +175,13 @@ class ProjectButtonRow(QtWidgets.QScrollArea):
 
     def __init__(self, parent=None, item_width: int = 100, item_height: int = 36):
         super().__init__(parent)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        # PyQt6 relocated ScrollBarPolicy enums under Qt.ScrollBarPolicy
+        self.setHorizontalScrollBarPolicy(
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.setVerticalScrollBarPolicy(
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         self.setWidgetResizable(False)
         self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
 
