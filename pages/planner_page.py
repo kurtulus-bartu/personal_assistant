@@ -407,21 +407,40 @@ class PlannerPage(QtWidgets.QWidget):
         self._update_project_buttons()
 
     def _update_project_buttons(self):
+        # Enforce: her proje en az bir task altında olmalı; aksi halde hata
+        used_project_ids: set[int] = {
+            int(t.get("project_id")) for t in self._all_tasks
+            if t.get("project_id") is not None
+        }
+        all_project_ids: set[int] = {
+            int(p.get("id")) for p in self._all_projects if p.get("id") is not None
+        }
+        orphans = sorted(all_project_ids - used_project_ids)
+        if orphans:
+            # "Projeler her türlü task altında olmalı" kuralı
+            raise ValueError(f"Orphan projects with no tasks: {orphans}")
+
         items: list[tuple[int, str]] = []
-        allowed: set[int] | None = None
-        if self._current_tag is not None:
-            allowed = {
+
+        # Tag seçimi yoksa proje göstermeyiz
+        if self._current_tag is None:
+            items = []
+        else:
+            # Sadece aktif tag’e ait en az bir task’ı olan projeleri listele
+            allowed: set[int] = {
                 int(t.get("project_id"))
                 for t in self._all_tasks
-                if t.get("project_id") and int(t.get("tag_id") or 0) == int(self._current_tag)
+                if t.get("project_id") is not None
+                   and int(t.get("tag_id") or 0) == int(self._current_tag)
             }
-        for p in self._all_projects:
-            try:
-                pid = int(p.get("id"))
-                if allowed is None or pid in allowed:
-                    items.append((pid, p.get("name", "")))
-            except Exception:
-                pass
+            for p in self._all_projects:
+                try:
+                    pid = int(p.get("id"))
+                    if pid in allowed:
+                        items.append((pid, p.get("name", "")))
+                except Exception:
+                    pass
+
         self.project_bar.setItems(items)
         ids = {pid for pid, _ in items}
         if self._current_project in ids:
@@ -430,20 +449,28 @@ class PlannerPage(QtWidgets.QWidget):
             self._current_project = None
 
     def _filter_tasks_and_update(self):
+        # Kanban: sadece takvime bağlı olmayan (has_time=0) task'lar
         filtered = [t for t in self._all_tasks if not bool(t.get("has_time", 0))]
-        if self._current_tag is not None:
-            filtered = [t for t in filtered if int(t.get("tag_id") or 0) == int(self._current_tag)]
+
+        # Proje seçiliyse tag filtresini bastır; sadece o projenin task'ları
         if self._current_project is not None:
             filtered = [t for t in filtered if int(t.get("project_id") or 0) == int(self._current_project)]
+        # Proje seçili değilse ve tag aktifse, tag’e göre filtrele
+        elif self._current_tag is not None:
+            filtered = [t for t in filtered if int(t.get("tag_id") or 0) == int(self._current_tag)]
+
         if hasattr(self.kanban, "set_tasks"):
             self.kanban.set_tasks(filtered)
 
     def _filter_events_and_update(self):
-        evs = self._all_events
-        if self._current_tag is not None:
-            evs = [e for e in evs if int(e.get("tag_id") or 0) == int(self._current_tag)]
+        evs = list(self._all_events)
+
+        # Proje seçiliyse tag filtresini bastır; sadece o projenin event'leri
         if self._current_project is not None:
             evs = [e for e in evs if int(e.get("project_id") or 0) == int(self._current_project)]
+        elif self._current_tag is not None:
+            evs = [e for e in evs if int(e.get("tag_id") or 0) == int(self._current_tag)]
+
         if hasattr(self.week, "setEvents"):
             try: self.week.setEvents(evs)
             except Exception: pass
