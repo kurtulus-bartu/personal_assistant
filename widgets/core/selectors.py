@@ -188,7 +188,10 @@ class ProjectButtonRow(QtWidgets.QScrollArea):
         self._inner = HorizontalSelector(item_width=item_width, item_height=item_height)
         self._inner.changed.connect(self.changed.emit)
         # İç widget genişliği içeriğe göre ayarlansın
-        self._inner.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        # In Qt6, QSizePolicy enums moved under the Policy enum
+        self._inner.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed
+        )
         self.setWidget(self._inner)
         self.setFixedHeight(item_height + 12)
 
