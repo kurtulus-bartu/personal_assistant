@@ -382,6 +382,7 @@ class PlannerPage(QtWidgets.QWidget):
         dlg = EventTaskDialog(m, self, parent_options=opts, tag_options=tag_opts, project_options=proj_opts)
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
+        dlg.postponed.connect(self._on_dialog_postponed)
         dlg.exec()
 
     def _open_task_dialog_by_id(self, task_id: int):
@@ -400,6 +401,7 @@ class PlannerPage(QtWidgets.QWidget):
         m.parent_id = (t or {}).get("parent_id")
         m.tag_id = (t or {}).get("tag_id")
         m.project_id = (t or {}).get("project_id")
+        m.series_id = (t or {}).get("series_id")
         tasks = []
         try:
             tasks = db.get_tasks() if db else []
@@ -414,6 +416,7 @@ class PlannerPage(QtWidgets.QWidget):
         dlg = EventTaskDialog(m, self, parent_options=opts, tag_options=tag_opts, project_options=proj_opts)
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
+        dlg.postponed.connect(self._on_dialog_postponed)
         dlg.exec()
 
     def _open_event_dialog_from_block(self, evb: EventBlock):
@@ -443,6 +446,7 @@ class PlannerPage(QtWidgets.QWidget):
         if task_row:
             m.tag_id = task_row.get("tag_id")
             m.project_id = task_row.get("project_id")
+            m.series_id = task_row.get("series_id")
 
         tag_opts = [(int(tg["id"]), tg.get("name", "")) for tg in self._all_tags]
         proj_opts = [
@@ -452,21 +456,48 @@ class PlannerPage(QtWidgets.QWidget):
         dlg = EventTaskDialog(m, self, tag_options=tag_opts, project_options=proj_opts)
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
+        dlg.postponed.connect(self._on_dialog_postponed)
         dlg.exec()
 
     def _on_dialog_saved(self, model):
         start_iso = _to_iso_dt(model.date, model.start) if model.start and model.end else None
         end_iso   = _to_iso_dt(model.date, model.end) if model.start and model.end else None
         due_iso   = _to_iso_qdate(model.date)
-        tid = self.store.upsert_task(model.id, model.title or "Untitled", model.notes or "", due_iso,
-                                    start_iso=start_iso, end_iso=end_iso, parent_id=model.parent_id,
-                                    tag_id=model.tag_id, project_id=model.project_id)
-        if not model.id:
-            model.id = tid
+
+        if model.rrule and not model.id:
+            try:
+                from dateutil.rrule import rrulestr
+                from datetime import datetime
+                dtstart = datetime.fromisoformat(start_iso) if start_iso else datetime.fromisoformat(due_iso + "T00:00:00")
+                rule = rrulestr(model.rrule, dtstart=dtstart)
+                dates = list(rule)[:50]
+            except Exception:
+                dates = []
+            series_id = int(QtCore.QDateTime.currentDateTime().toSecsSinceEpoch())
+            dur_secs = model.start.secsTo(model.end) if model.start and model.end else 0
+            from datetime import timedelta
+            for d in dates:
+                qd = QtCore.QDate(d.year, d.month, d.day)
+                s_iso = d.isoformat() if model.start and model.end else None
+                e_iso = (d + timedelta(seconds=dur_secs)).isoformat() if model.start and model.end else None
+                due = _to_iso_qdate(qd)
+                self.store.upsert_task(None, model.title or "Untitled", model.notes or "", due,
+                                       start_iso=s_iso, end_iso=e_iso, parent_id=model.parent_id,
+                                       series_id=series_id, tag_id=model.tag_id, project_id=model.project_id)
+        else:
+            tid = self.store.upsert_task(model.id, model.title or "Untitled", model.notes or "", due_iso,
+                                         start_iso=start_iso, end_iso=end_iso, parent_id=model.parent_id,
+                                         series_id=model.series_id, tag_id=model.tag_id, project_id=model.project_id)
+            if not model.id:
+                model.id = tid
 
     def _on_dialog_deleted(self, model):
         if model.id:
             self.store.delete_task(int(model.id))
+
+    def _on_dialog_postponed(self, model):
+        if model.id:
+            self.store.skip_task(int(model.id))
 
     # ---------------- Apply data to UI ----------------
     def _apply_tasks(self, tasks: list[dict]):

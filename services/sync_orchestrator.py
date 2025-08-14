@@ -95,13 +95,18 @@ class SyncOrchestrator(QtCore.QObject):
     def upsert_task(self, task_id: Optional[int], title: str, notes: str,
                     due_date_iso: Optional[str], start_iso: Optional[str]=None,
                     end_iso: Optional[str]=None, parent_id: Optional[int]=None,
+                    series_id: Optional[int]=None,
                     tag_id: Optional[int]=None, project_id: Optional[int]=None) -> int:
-        tid = self.db.upsert_task(task_id, title, notes, due_date_iso, start_iso=start_iso, end_iso=end_iso, parent_id=parent_id, tag_id=tag_id, project_id=project_id)
+        tid = self.db.upsert_task(task_id, title, notes, due_date_iso, start_iso=start_iso, end_iso=end_iso, parent_id=parent_id, series_id=series_id, tag_id=tag_id, project_id=project_id)
         self._emit_all_from_local()
         return tid
 
     def delete_task(self, task_id: int):
-        self.db.delete_task(task_id)
+        self.db.delete_future(task_id)
+        self._emit_all_from_local()
+
+    def skip_task(self, task_id: int):
+        self.db.skip_task(task_id)
         self._emit_all_from_local()
 
     def set_task_status(self, task_id: int, status: str):

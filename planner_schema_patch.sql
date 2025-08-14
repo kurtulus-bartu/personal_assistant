@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS public.tasks (
   start_ts    timestamptz NULL,
   end_ts      timestamptz NULL,
   parent_id   integer NULL,
+  series_id   integer NULL,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
@@ -39,6 +40,9 @@ ALTER TABLE IF EXISTS public.tasks
 
 ALTER TABLE IF EXISTS public.tasks
   ADD COLUMN IF NOT EXISTS project_id integer NULL;
+
+ALTER TABLE IF EXISTS public.tasks
+  ADD COLUMN IF NOT EXISTS series_id integer NULL;
 
 -- 2) Faydalı indeksler ve view (tasks tablosu mevcutsa)
 DO $$

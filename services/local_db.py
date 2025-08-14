@@ -30,6 +30,7 @@ class LocalDB:
             end_ts   TEXT,
             has_time INTEGER DEFAULT 0,
             parent_id INTEGER,
+            series_id INTEGER,
             deleted INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now'))
@@ -44,6 +45,8 @@ class LocalDB:
         try: c.execute("ALTER TABLE tasks ADD COLUMN tag_id INTEGER")
         except sqlite3.OperationalError: pass
         try: c.execute("ALTER TABLE tasks ADD COLUMN project_id INTEGER")
+        except sqlite3.OperationalError: pass
+        try: c.execute("ALTER TABLE tasks ADD COLUMN series_id INTEGER")
         except sqlite3.OperationalError: pass
         c.execute("""
         CREATE TABLE IF NOT EXISTS tags(
@@ -98,8 +101,8 @@ class LocalDB:
             self._conn.execute("DELETE FROM tasks")
             for t in rows or []:
                 self._conn.execute("""
-                    INSERT INTO tasks(id, title, notes, status, tag_id, project_id, due_date, start_ts, end_ts, has_time, deleted, parent_id, created_at, updated_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    INSERT INTO tasks(id, title, notes, status, tag_id, project_id, due_date, start_ts, end_ts, has_time, parent_id, series_id, deleted, created_at, updated_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, (
                     t.get("id"),
                     t.get("title",""),
@@ -111,8 +114,9 @@ class LocalDB:
                     t.get("start_ts"),
                     t.get("end_ts"),
                     int(t.get("has_time",0)),
-                    int(t.get("deleted",0)) if "deleted" in t else 0,
                     t.get("parent_id"),
+                    t.get("series_id"),
+                    int(t.get("deleted",0)) if "deleted" in t else 0,
                     t.get("created_at") or _now_iso(),
                     t.get("updated_at") or _now_iso(),
                 ))
@@ -205,13 +209,14 @@ class LocalDB:
     def upsert_task(self, task_id: Optional[int], title: str, notes: str,
                     due_date_iso: Optional[str], start_iso: Optional[str]=None,
                     end_iso: Optional[str]=None, parent_id: Optional[int]=None,
+                    series_id: Optional[int]=None,
                     tag_id: Optional[int]=None, project_id: Optional[int]=None) -> int:
         has_time = int(bool(start_iso and end_iso))
         if task_id:
             self._conn.execute("""
-                UPDATE tasks SET title=?, notes=?, due_date=?, start_ts=?, end_ts=?, has_time=?, parent_id=?, tag_id=?, project_id=?, updated_at=?
+                UPDATE tasks SET title=?, notes=?, due_date=?, start_ts=?, end_ts=?, has_time=?, parent_id=?, series_id=?, tag_id=?, project_id=?, updated_at=?
                 WHERE id=?
-            """, (title, notes, due_date_iso, start_iso, end_iso, has_time, parent_id, tag_id, project_id, _now_iso(), int(task_id)))
+            """, (title, notes, due_date_iso, start_iso, end_iso, has_time, parent_id, series_id, tag_id, project_id, _now_iso(), int(task_id)))
             self._enqueue("tasks", "upsert", {
                 "id": int(task_id),
                 "title": title, "notes": notes,
@@ -219,15 +224,16 @@ class LocalDB:
                 "start_ts": start_iso, "end_ts": end_iso,
                 "has_time": bool(has_time),
                 "parent_id": parent_id,
+                "series_id": series_id,
                 "tag_id": tag_id,
                 "project_id": project_id,
             })
             tid = int(task_id)
         else:
             cur = self._conn.execute("""
-                INSERT INTO tasks(title, notes, due_date, start_ts, end_ts, has_time, parent_id, tag_id, project_id, created_at, updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?)
-            """, (title, notes, due_date_iso, start_iso, end_iso, has_time, parent_id, tag_id, project_id, _now_iso(), _now_iso()))
+                INSERT INTO tasks(title, notes, due_date, start_ts, end_ts, has_time, parent_id, series_id, tag_id, project_id, created_at, updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (title, notes, due_date_iso, start_iso, end_iso, has_time, parent_id, series_id, tag_id, project_id, _now_iso(), _now_iso()))
             tid = int(cur.lastrowid)
             self._enqueue("tasks", "upsert", {
                 "id": tid,
@@ -236,6 +242,7 @@ class LocalDB:
                 "start_ts": start_iso, "end_ts": end_iso,
                 "has_time": bool(has_time),
                 "parent_id": parent_id,
+                "series_id": series_id,
                 "tag_id": tag_id,
                 "project_id": project_id,
             })
@@ -246,6 +253,44 @@ class LocalDB:
         self._conn.execute("UPDATE tasks SET deleted=1, updated_at=? WHERE id=?",
                            (_now_iso(), int(task_id)))
         self._enqueue("tasks", "delete", {"id": int(task_id)})
+        self._conn.commit()
+
+    def skip_task(self, task_id: int):
+        self._conn.execute("UPDATE tasks SET deleted=1, updated_at=? WHERE id=?",
+                           (_now_iso(), int(task_id)))
+        self._enqueue("tasks", "delete", {"id": int(task_id)})
+        self._conn.commit()
+
+    def delete_future(self, task_id: int):
+        row = self._conn.execute(
+            "SELECT series_id, start_ts, due_date FROM tasks WHERE id=?",
+            (int(task_id),)
+        ).fetchone()
+        if not row:
+            return
+        series_id = row["series_id"]
+        base_ts = row["start_ts"] or row["due_date"]
+        if series_id is None:
+            self.delete_task(task_id)
+            return
+        rows = self._conn.execute(
+            """
+            SELECT id FROM tasks
+            WHERE series_id=? AND (
+                (start_ts IS NOT NULL AND start_ts>=?) OR
+                (start_ts IS NULL AND due_date>=?)
+            )
+            """,
+            (series_id, base_ts, base_ts)
+        ).fetchall()
+        now = _now_iso()
+        for r in rows:
+            tid = int(r["id"])
+            self._conn.execute(
+                "UPDATE tasks SET deleted=1, updated_at=? WHERE id=?",
+                (now, tid)
+            )
+            self._enqueue("tasks", "delete", {"id": tid})
         self._conn.commit()
 
     def set_task_status(self, task_id: int, status: str):
