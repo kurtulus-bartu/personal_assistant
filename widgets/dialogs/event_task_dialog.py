@@ -13,6 +13,7 @@ class ItemModel:
     start: Optional[QtCore.QTime] = None
     end: Optional[QtCore.QTime] = None
     rrule: str | None = None
+    series_id: Optional[int] = None
     task_id: Optional[int] = None  # if event
     parent_id: Optional[int] = None
     tag_id: Optional[int] = None
@@ -21,6 +22,7 @@ class ItemModel:
 class EventTaskDialog(QtWidgets.QDialog):
     saved = QtCore.pyqtSignal(object)    # ItemModel
     deleted = QtCore.pyqtSignal(object)  # ItemModel
+    postponed = QtCore.pyqtSignal(object)  # ItemModel
 
     def __init__(self, model: ItemModel, parent=None,
                  parent_options: List[Tuple[int, str]] | None = None,
@@ -94,27 +96,36 @@ class EventTaskDialog(QtWidgets.QDialog):
         # Recurrence
         rec_row = QtWidgets.QHBoxLayout(); rec_row.setSpacing(8)
         self.cmb_recur = QtWidgets.QComboBox()
-        self.cmb_recur.addItems(["None", "Daily", "Weekly", "Monthly", "Custom (RRULE)"])
-        self.edt_rrule = QtWidgets.QLineEdit(); self.edt_rrule.setPlaceholderText("RRULE=FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,WE")
-        self.edt_rrule.setEnabled(False)
+        self.cmb_recur.addItems(["None", "Weekdays", "Daily", "Weekly", "Custom"])
+        self.spn_count = QtWidgets.QSpinBox(); self.spn_count.setRange(1, 999); self.spn_count.setEnabled(False)
+        self.until_edit = QtWidgets.QDateEdit(calendarPopup=True); self.until_edit.setDisplayFormat("yyyy-MM-dd"); self.until_edit.setEnabled(False)
         rec_row.addWidget(QtWidgets.QLabel("Repeat"))
         rec_row.addWidget(self.cmb_recur, 1)
-        rec_row.addWidget(self.edt_rrule, 2)
+        rec_row.addWidget(QtWidgets.QLabel("Count"))
+        rec_row.addWidget(self.spn_count)
+        rec_row.addWidget(QtWidgets.QLabel("Until"))
+        rec_row.addWidget(self.until_edit)
         main.addLayout(rec_row)
 
         # Buttons
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
+        self.btn_skip = QtWidgets.QPushButton("Postpone")
         self.btn_delete = QtWidgets.QPushButton("Delete")
         self.btn_cancel = QtWidgets.QPushButton("Cancel")
         self.btn_save = QtWidgets.QPushButton("Save")
-        btn_row.addWidget(self.btn_delete); btn_row.addWidget(self.btn_cancel); btn_row.addWidget(self.btn_save)
+        btn_row.addWidget(self.btn_skip)
+        btn_row.addWidget(self.btn_delete)
+        btn_row.addWidget(self.btn_cancel)
+        btn_row.addWidget(self.btn_save)
+        self.btn_skip.setVisible(model.id is not None)
         main.addLayout(btn_row)
 
         # Wire
         self.cmb_recur.currentIndexChanged.connect(self._on_recur_changed)
         self.chk_time.toggled.connect(self._on_has_time_toggled)
         self.cmb_tag.currentIndexChanged.connect(self._on_tag_changed)
+        self.btn_skip.clicked.connect(self._on_postpone)
         self.btn_delete.clicked.connect(self._on_delete)
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_save.clicked.connect(self._on_save)
@@ -122,7 +133,9 @@ class EventTaskDialog(QtWidgets.QDialog):
         self._load_model(model)
 
     def _on_recur_changed(self, idx: int):
-        self.edt_rrule.setEnabled(self.cmb_recur.currentText() == "Custom (RRULE)")
+        is_custom = self.cmb_recur.currentText() == "Custom"
+        self.spn_count.setEnabled(is_custom)
+        self.until_edit.setEnabled(is_custom)
 
     def _on_has_time_toggled(self, checked: bool):
         self.start_edit.setEnabled(checked); self.end_edit.setEnabled(checked)
@@ -137,9 +150,32 @@ class EventTaskDialog(QtWidgets.QDialog):
         if m.start: self.start_edit.setTime(m.start)
         if m.end: self.end_edit.setTime(m.end)
         if m.rrule:
-            self.cmb_recur.setCurrentText("Custom (RRULE)")
-            self.edt_rrule.setText(m.rrule)
-            self.edt_rrule.setEnabled(True)
+            rr = m.rrule.upper()
+            if rr == "RRULE=FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR":
+                self.cmb_recur.setCurrentText("Weekdays")
+            elif rr.startswith("RRULE=FREQ=DAILY") and "COUNT" not in rr and "UNTIL" not in rr:
+                self.cmb_recur.setCurrentText("Daily")
+            elif rr.startswith("RRULE=FREQ=WEEKLY") and "BYDAY" not in rr:
+                self.cmb_recur.setCurrentText("Weekly")
+            else:
+                self.cmb_recur.setCurrentText("Custom")
+                # naive parse for COUNT and UNTIL
+                if "COUNT=" in rr:
+                    try:
+                        cnt = int(rr.split("COUNT=")[1].split(";")[0])
+                        self.spn_count.setValue(cnt)
+                    except Exception:
+                        pass
+                if "UNTIL=" in rr:
+                    try:
+                        until_part = rr.split("UNTIL=")[1].split(";")[0]
+                        qd = QtCore.QDate.fromString(until_part[:8], "yyyyMMdd")
+                        if qd.isValid():
+                            self.until_edit.setDate(qd)
+                    except Exception:
+                        pass
+                self.spn_count.setEnabled(True)
+                self.until_edit.setEnabled(True)
         else:
             self.cmb_recur.setCurrentText("None")
         if m.parent_id is not None:
@@ -168,6 +204,10 @@ class EventTaskDialog(QtWidgets.QDialog):
         self.deleted.emit(self._model)
         self.accept()
 
+    def _on_postpone(self):
+        self.postponed.emit(self._model)
+        self.accept()
+
     def _on_save(self):
         m = ItemModel(kind=self._model.kind, id=self._model.id, task_id=self._model.task_id)
         m.title = self.edt_title.text().strip()
@@ -181,14 +221,20 @@ class EventTaskDialog(QtWidgets.QDialog):
         sel = self.cmb_recur.currentText()
         if sel == "None":
             m.rrule = None
+        elif sel == "Weekdays":
+            m.rrule = "RRULE=FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"
         elif sel == "Daily":
-            m.rrule = "RRULE=FREQ=DAILY;INTERVAL=1"
+            m.rrule = "RRULE=FREQ=DAILY"
         elif sel == "Weekly":
-            m.rrule = "RRULE=FREQ=WEEKLY;INTERVAL=1"
-        elif sel == "Monthly":
-            m.rrule = "RRULE=FREQ=MONTHLY;INTERVAL=1"
+            m.rrule = "RRULE=FREQ=WEEKLY"
         else:
-            m.rrule = self.edt_rrule.text().strip() or None
+            parts = ["RRULE=FREQ=DAILY"]
+            if self.spn_count.isEnabled():
+                parts.append(f"COUNT={self.spn_count.value()}")
+            if self.until_edit.isEnabled() and self.until_edit.date().isValid():
+                until = self.until_edit.date().toString("yyyyMMdd")
+                parts.append(f"UNTIL={until}")
+            m.rrule = ";".join(parts)
         data = self.cmb_parent.currentData()
         m.parent_id = int(data) if data is not None else None
         data = self.cmb_tag.currentData()
