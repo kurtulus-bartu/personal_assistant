@@ -56,8 +56,8 @@ class SyncService(QtCore.QObject):
     def delete_tag(self, tag_id: int) -> bool:
         return api.delete_tag(tag_id)
 
-    def upsert_project(self, name: str, project_id: int | None = None) -> Dict[str, Any]:
-        return api.upsert_project(name, project_id)
+    def upsert_project(self, name: str, project_id: int | None = None, tag_id: int | None = None) -> Dict[str, Any]:
+        return api.upsert_project(name, project_id, tag_id)
 
     def delete_project(self, project_id: int) -> bool:
         return api.delete_project(project_id)

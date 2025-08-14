@@ -54,7 +54,7 @@ class SyncOrchestrator(QtCore.QObject):
                     pass
             for p in projects:
                 try:
-                    api.upsert_project(p.get("name", ""), p.get("id"))
+                    api.upsert_project(p.get("name", ""), p.get("id"), p.get("tag_id"))
                 except Exception:
                     pass
             for t in tasks:
@@ -79,10 +79,10 @@ class SyncOrchestrator(QtCore.QObject):
         self.tagsUpdated.emit(self.db.get_tags())
 
     # ---------- PROJECTS ----------
-    def add_project(self, name: str):
-        pid = self.db.add_project_local(name)
+    def add_project(self, name: str, tag_id: Optional[int] = None):
+        pid = self.db.add_project_local(name, tag_id)
         try:
-            api.upsert_project(name, pid)
+            api.upsert_project(name, pid, tag_id)
         except Exception:
             pass
         self.projectsUpdated.emit(self.db.get_projects())
