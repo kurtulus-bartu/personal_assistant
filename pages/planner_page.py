@@ -337,7 +337,10 @@ class PlannerPage(QtWidgets.QWidget):
         except Exception:
             pass
         tag_opts = [(int(t["id"]), t.get("name", "")) for t in self._all_tags]
-        proj_opts = [(int(p["id"]), p.get("name", "")) for p in self._all_projects]
+        proj_opts = [
+            (int(p["id"]), p.get("name", ""), int(p.get("tag_id")) if p.get("tag_id") is not None else None)
+            for p in self._all_projects
+        ]
         if self._current_tag is not None:
             m.tag_id = int(self._current_tag)
         if self._current_project is not None:
@@ -370,7 +373,10 @@ class PlannerPage(QtWidgets.QWidget):
         except Exception:
             pass
         tag_opts = [(int(tg["id"]), tg.get("name", "")) for tg in self._all_tags]
-        proj_opts = [(int(p["id"]), p.get("name", "")) for p in self._all_projects]
+        proj_opts = [
+            (int(p["id"]), p.get("name", ""), int(p.get("tag_id")) if p.get("tag_id") is not None else None)
+            for p in self._all_projects
+        ]
         dlg = EventTaskDialog(m, self, parent_options=opts, tag_options=tag_opts, project_options=proj_opts)
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
@@ -379,14 +385,36 @@ class PlannerPage(QtWidgets.QWidget):
     def _open_event_dialog_from_block(self, evb: EventBlock):
         if not EventTaskDialog:
             return
-        m = ItemModel(kind="event", id=getattr(evb, "id", None), title=getattr(evb, "title", ""), notes=getattr(evb, "notes", ""))
+        tid = int(getattr(evb, "task_id", 0) or getattr(evb, "id", 0) or 0)
+        m = ItemModel(kind="event", id=tid or None, title=getattr(evb, "title", ""), notes=getattr(evb, "notes", ""))
+        m.task_id = tid or None
         d = QtCore.QDate(evb.start.year, evb.start.month, evb.start.day)
         m.date = d
         m.start = QtCore.QTime(evb.start.hour, evb.start.minute)
         m.end   = QtCore.QTime(evb.end.hour, evb.end.minute)
         m.rrule   = getattr(evb, "rrule", None)
+
+        # fetch existing tag/project from store
+        task_row = None
+        try:
+            db = getattr(self.store, "db", None)
+            task_row = db.get_task_by_id(tid) if (db and tid) else None
+        except Exception:
+            task_row = None
+        if not task_row:
+            for t in self._all_tasks:
+                if int(t.get("id") or 0) == tid:
+                    task_row = t
+                    break
+        if task_row:
+            m.tag_id = task_row.get("tag_id")
+            m.project_id = task_row.get("project_id")
+
         tag_opts = [(int(tg["id"]), tg.get("name", "")) for tg in self._all_tags]
-        proj_opts = [(int(p["id"]), p.get("name", "")) for p in self._all_projects]
+        proj_opts = [
+            (int(p["id"]), p.get("name", ""), int(p.get("tag_id")) if p.get("tag_id") is not None else None)
+            for p in self._all_projects
+        ]
         dlg = EventTaskDialog(m, self, tag_options=tag_opts, project_options=proj_opts)
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)

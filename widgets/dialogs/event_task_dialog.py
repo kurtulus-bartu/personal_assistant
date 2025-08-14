@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Tuple
 from PyQt6 import QtCore, QtWidgets
 
 @dataclass
@@ -23,16 +23,17 @@ class EventTaskDialog(QtWidgets.QDialog):
     deleted = QtCore.pyqtSignal(object)  # ItemModel
 
     def __init__(self, model: ItemModel, parent=None,
-                 parent_options: list[tuple[int,str]] | None = None,
-                 tag_options: list[tuple[int,str]] | None = None,
-                 project_options: list[tuple[int,str]] | None = None):
+                 parent_options: List[Tuple[int, str]] | None = None,
+                 tag_options: List[Tuple[int, str]] | None = None,
+                 project_options: List[Tuple[int, str, int | None]] | None = None):
         super().__init__(parent)
         self.setWindowTitle("Edit")
         self.setModal(True)
         self._model = model
         self._parent_options = parent_options or []
         self._tag_options = tag_options or []
-        self._project_options = project_options or []
+        # project_options: (project_id, name, tag_id or None)
+        self._project_options: List[Tuple[int, str, int | None]] = project_options or []
         self.setMinimumWidth(480)
 
         main = QtWidgets.QVBoxLayout(self)
@@ -71,7 +72,7 @@ class EventTaskDialog(QtWidgets.QDialog):
         proj_row = QtWidgets.QHBoxLayout(); proj_row.setSpacing(8)
         self.cmb_project = QtWidgets.QComboBox()
         self.cmb_project.addItem("None", None)
-        for pid, name in self._project_options:
+        for pid, name, _ in self._project_options:
             self.cmb_project.addItem(name, pid)
         proj_row.addWidget(QtWidgets.QLabel("Project"))
         proj_row.addWidget(self.cmb_project, 1)
@@ -113,6 +114,7 @@ class EventTaskDialog(QtWidgets.QDialog):
         # Wire
         self.cmb_recur.currentIndexChanged.connect(self._on_recur_changed)
         self.chk_time.toggled.connect(self._on_has_time_toggled)
+        self.cmb_tag.currentIndexChanged.connect(self._on_tag_changed)
         self.btn_delete.clicked.connect(self._on_delete)
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_save.clicked.connect(self._on_save)
@@ -150,10 +152,17 @@ class EventTaskDialog(QtWidgets.QDialog):
             idx = self.cmb_tag.findData(int(m.tag_id))
             if idx != -1:
                 self.cmb_tag.setCurrentIndex(idx)
+        else:
+            self.cmb_tag.setCurrentIndex(0)
+
+        # refresh projects according to tag selection
+        self._refresh_project_combo(m.tag_id)
         if m.project_id is not None:
             idx = self.cmb_project.findData(int(m.project_id))
             if idx != -1:
                 self.cmb_project.setCurrentIndex(idx)
+        else:
+            self.cmb_project.setCurrentIndex(0)
 
     def _on_delete(self):
         self.deleted.emit(self._model)
@@ -188,3 +197,22 @@ class EventTaskDialog(QtWidgets.QDialog):
         m.project_id = int(data) if data is not None else None
         self.saved.emit(m)
         self.accept()
+
+    def _on_tag_changed(self, idx: int):
+        data = self.cmb_tag.itemData(idx)
+        tag_id = int(data) if data is not None else None
+        self._refresh_project_combo(tag_id)
+
+    def _refresh_project_combo(self, tag_id: int | None):
+        current = self.cmb_project.currentData()
+        self.cmb_project.blockSignals(True)
+        self.cmb_project.clear()
+        self.cmb_project.addItem("None", None)
+        for pid, name, p_tag in self._project_options:
+            if tag_id is None or (p_tag is not None and int(p_tag) == int(tag_id)):
+                self.cmb_project.addItem(name, pid)
+        if current is not None:
+            idx = self.cmb_project.findData(current)
+            if idx != -1:
+                self.cmb_project.setCurrentIndex(idx)
+        self.cmb_project.blockSignals(False)
