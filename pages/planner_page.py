@@ -1,6 +1,4 @@
 from __future__ import annotations
-from datetime import datetime, timedelta
-from dateutil.rrule import rrulestr
 from PyQt6 import QtCore, QtGui, QtWidgets
 from widgets.layout.left_panel import LeftPanel
 from widgets.calendar.week_view_editable import CalendarWeekView, EventBlock
@@ -309,39 +307,12 @@ class PlannerPage(QtWidgets.QWidget):
             self.kanban.set_tasks(filtered)
 
     def _apply_events(self, events: list[dict]):
-        # Expand recurring events (RRULE) within the current week
-        start_week = datetime(self._anchor_date.year(), self._anchor_date.month(), self._anchor_date.day())
-        end_week = start_week + timedelta(days=7)
-        expanded: list[dict] = []
-        for ev in events:
-            expanded.append(ev)
-            rrule_str = ev.get("rrule")
-            if not rrule_str:
-                continue
-            try:
-                start_dt = datetime.fromisoformat(ev["start"])
-                end_dt = datetime.fromisoformat(ev["end"])
-                duration = end_dt - start_dt
-                rule = rrulestr(rrule_str, dtstart=start_dt)
-                for occ in rule.between(start_week, end_week, inc=True):
-                    if occ == start_dt:
-                        continue
-                    new_ev = dict(ev)
-                    new_ev["start"] = occ.isoformat()
-                    new_ev["end"] = (occ + duration).isoformat()
-                    expanded.append(new_ev)
-            except Exception:
-                pass
         if hasattr(self.week, "setEvents"):
-            try:
-                self.week.setEvents(expanded)
-            except Exception:
-                pass
+            try: self.week.setEvents(events)
+            except Exception: pass
         if hasattr(self.day, "setEvents"):
-            try:
-                self.day.setEvents(expanded)
-            except Exception:
-                pass
+            try: self.day.setEvents(events)
+            except Exception: pass
 
     def _apply_tags(self, tags: list[dict]):
         items = []
