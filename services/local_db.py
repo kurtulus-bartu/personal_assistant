@@ -176,6 +176,11 @@ class LocalDB:
 
     # ---------------- PROJECTS ops ----------------
     def add_project_local(self, name: str) -> int:
+        existing = self._conn.execute(
+            "SELECT id FROM projects WHERE name=?", (name,)
+        ).fetchone()
+        if existing:
+            return int(existing["id"])
         cur = self._conn.execute("INSERT INTO projects(name) VALUES(?)", (name,))
         pid = int(cur.lastrowid)
         self._enqueue("projects", "insert", {"name": name})
