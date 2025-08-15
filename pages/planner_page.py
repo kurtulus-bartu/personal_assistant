@@ -474,6 +474,12 @@ class PlannerPage(QtWidgets.QWidget):
             tasks = db.get_tasks() if db else []
         except Exception:
             tasks = []
+        child_rows = [
+            (int(ct["id"]), ct.get("title", ""))
+            for ct in tasks
+            if int(ct.get("parent_id") or 0) == int(task_id)
+        ]
+        m.children = child_rows
         opts = self._build_parent_options(tasks, m.tag_id, m.project_id, exclude_id=task_id)
         tag_opts = [(int(tg["id"]), tg.get("name", "")) for tg in self._all_tags]
         proj_opts = [
