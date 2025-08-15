@@ -126,8 +126,8 @@ class PlannerPage(QtWidgets.QWidget):
     # ---------------- UI ----------------
     def _build_ui(self):
         root = QtWidgets.QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(8)
 
         # ---- HEADER (3 kolonun üstünde) ----
         header_w = QtWidgets.QWidget()
@@ -150,18 +150,16 @@ class PlannerPage(QtWidgets.QWidget):
         header.addWidget(self.btn_refresh)
         root.addWidget(header_w)
 
-        # ---- 3 KOLON ----
-        central = QtWidgets.QWidget()
-        h = QtWidgets.QHBoxLayout(central)
+        # ---- SPLITTER: Sol panel + Takvim/Kanban ----
+        self.left_panel_widget = LeftPanel(); self.left_panel_widget.setObjectName("Card")
+        self.left_panel_widget.viewChanged.connect(self.on_view_changed)
+        self.left_panel_widget.tagsChanged.connect(self.on_tags_changed)
+        self.left_panel_widget.dateSelected.connect(self.on_anchor_date_changed)
+
+        self.calendar_container = QtWidgets.QWidget(); self.calendar_container.setObjectName("Card")
+        h = QtWidgets.QHBoxLayout(self.calendar_container)
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(0)
-
-        # Sol panel
-        self.left = LeftPanel()
-        self.left.viewChanged.connect(self.on_view_changed)
-        self.left.tagsChanged.connect(self.on_tags_changed)
-        self.left.dateSelected.connect(self.on_anchor_date_changed)
-        h.addWidget(self.left)
 
         # Orta panel: Takvim
         content = QtWidgets.QWidget()
@@ -252,7 +250,27 @@ class PlannerPage(QtWidgets.QWidget):
         r_l.addLayout(proj_row)
         h.addWidget(right)
 
-        root.addWidget(central, 1)
+        # QSplitter setup
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        self.splitter.setHandleWidth(8)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.addWidget(self.left_panel_widget)
+        self.splitter.addWidget(self.calendar_container)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setSizes([500, 500])
+        self.splitter.setStyleSheet(
+            """
+QSplitter::handle {
+  background: #2d2d2d;
+}
+QWidget#Card {
+  border: 1px solid #333; border-radius: 12px; background: #212121;
+}
+"""
+        )
+
+        root.addWidget(self.splitter, 1)
 
         # Başlangıç
         if hasattr(self.week, "setAnchorDate"):
@@ -283,8 +301,8 @@ class PlannerPage(QtWidgets.QWidget):
         self.store.eventsUpdated.connect(self._apply_events)
         self.store.tagsUpdated.connect(self._apply_tags)
         self.store.projectsUpdated.connect(self._apply_projects)
-        if hasattr(self.left, "attachStore"):
-            self.left.attachStore(self.store)
+        if hasattr(self.left_panel_widget, "attachStore"):
+            self.left_panel_widget.attachStore(self.store)
         self.store.bootstrap()
         if hasattr(self.kanban, "statusChanged"):
             self.kanban.statusChanged.connect(self.store.set_task_status)
@@ -447,10 +465,14 @@ class PlannerPage(QtWidgets.QWidget):
             m.project_id = int(self._current_project)
         opts = self._build_parent_options(tasks, m.tag_id, m.project_id)
         dlg = EventTaskDialog(m, self, parent_options=opts, tag_options=tag_opts, project_options=proj_opts)
+        dlg.openTaskRequested.connect(self._open_task_by_id)
+        dlg.populate_linked_tasks([])
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
-        dlg.postponed.connect(self._on_dialog_postponed)
         dlg.exec()
+
+    def _open_task_by_id(self, task_id: int):
+        self._open_task_dialog_by_id(task_id)
 
     def _open_task_dialog_by_id(self, task_id: int):
         if not EventTaskDialog:
@@ -487,9 +509,10 @@ class PlannerPage(QtWidgets.QWidget):
             for p in self._all_projects
         ]
         dlg = EventTaskDialog(m, self, parent_options=opts, tag_options=tag_opts, project_options=proj_opts)
+        dlg.openTaskRequested.connect(self._open_task_by_id)
+        dlg.populate_linked_tasks(self.store.get_linked_tasks(int(task_id)))
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
-        dlg.postponed.connect(self._on_dialog_postponed)
         dlg.exec()
 
     def _open_event_dialog_from_block(self, evb: EventBlock):
@@ -527,9 +550,10 @@ class PlannerPage(QtWidgets.QWidget):
             for p in self._all_projects
         ]
         dlg = EventTaskDialog(m, self, tag_options=tag_opts, project_options=proj_opts)
+        dlg.openTaskRequested.connect(self._open_task_by_id)
+        dlg.populate_linked_tasks(self.store.get_linked_tasks(int(m.id)) if m.id else [])
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
-        dlg.postponed.connect(self._on_dialog_postponed)
         dlg.exec()
 
     def _on_dialog_saved(self, model):
@@ -627,10 +651,6 @@ class PlannerPage(QtWidgets.QWidget):
         if model.id:
             self.store.delete_task(int(model.id))
 
-    def _on_dialog_postponed(self, model):
-        if model.id:
-            self.store.skip_task(int(model.id))
-
     # ---------------- Apply data to UI ----------------
     def _apply_tasks(self, tasks: list[dict]):
         self._all_tasks = tasks or []
@@ -649,8 +669,8 @@ class PlannerPage(QtWidgets.QWidget):
                 items.append((int(t["id"]), t["name"]))
             except Exception:
                 pass
-        if hasattr(self.left, "applyServerTags"): self.left.applyServerTags(items)
-        elif hasattr(self.left, "applyTags"):     self.left.applyTags(items)
+        if hasattr(self.left_panel_widget, "applyServerTags"): self.left_panel_widget.applyServerTags(items)
+        elif hasattr(self.left_panel_widget, "applyTags"):     self.left_panel_widget.applyTags(items)
 
     def _apply_projects(self, projects: list[dict]):
         self._all_projects = projects or []
