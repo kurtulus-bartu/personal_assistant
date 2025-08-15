@@ -1,6 +1,7 @@
 from __future__ import annotations
 from PyQt6 import QtCore, QtGui, QtWidgets
 from datetime import datetime, timedelta
+from itertools import islice
 from widgets.layout.left_panel import LeftPanel
 from widgets.calendar.week_view_editable import CalendarWeekView, EventBlock
 from widgets.calendar.day_view import CalendarDayView
@@ -527,50 +528,92 @@ class PlannerPage(QtWidgets.QWidget):
 
     def _on_dialog_saved(self, model):
         start_iso = _to_iso_dt(model.date, model.start) if model.start and model.end else None
-        end_iso   = _to_iso_dt(model.date, model.end) if model.start and model.end else None
+        end_iso   = _to_iso_dt(model.date, model.end)   if model.start and model.end else None
         due_iso   = _to_iso_qdate(model.date)
 
-        if model.rrule and not model.id:
+        # --- RRULE varsa: yeni veya mevcut fark etmeksizin genişlet ---
+        if model.rrule:
+            # 1) Başlangıç tarihi/saatini belirle
             dtstart = (
                 datetime.fromisoformat(start_iso)
                 if start_iso
                 else datetime.fromisoformat(due_iso + "T00:00:00")
             )
+
+            # 2) İlk 50 oluşumu güvenli biçimde çek (sonsuz listeleme YOK)
             try:
                 from dateutil.rrule import rrulestr
 
                 rule = rrulestr(model.rrule, dtstart=dtstart)
-                dates = list(rule)[:50]
+                dates = list(islice(rule, 50))
             except Exception:
                 dates = _expand_rrule_simple(model.rrule, dtstart, limit=50)
 
-            series_id = int(QtCore.QDateTime.currentDateTime().toSecsSinceEpoch())
+            # 3) Seri kimliği: varsa koru, yoksa üret
+            series_id = model.series_id or int(QtCore.QDateTime.currentDateTime().toSecsSinceEpoch())
             dur_secs = model.start.secsTo(model.end) if model.start and model.end else 0
+
+            # 4) Oluşumları yaz. Mevcut öğe varsa onu güncelle, diğerlerini ekle.
             for d in dates:
                 qd = QtCore.QDate(d.year, d.month, d.day)
                 s_iso = d.isoformat() if model.start and model.end else None
                 e_iso = (
-                    (d + timedelta(seconds=dur_secs)).isoformat()
-                    if model.start and model.end
-                    else None
+                    (d + timedelta(seconds=dur_secs)).isoformat() if model.start and model.end else None
                 )
                 due = _to_iso_qdate(qd)
-                self.store.upsert_task(
-                    None,
-                    model.title or "Untitled",
-                    model.notes or "",
-                    due,
-                    start_iso=s_iso,
-                    end_iso=e_iso,
-                    parent_id=model.parent_id,
-                    series_id=series_id,
-                    tag_id=model.tag_id,
-                    project_id=model.project_id,
-                )
+
+                is_current = False
+                if model.id and start_iso and s_iso:
+                    # Aynı başlangıç anı ise mevcut kaydı güncelle
+                    is_current = s_iso == start_iso
+
+                if is_current and model.id:
+                    self.store.upsert_task(
+                        model.id,
+                        model.title or "Untitled",
+                        model.notes or "",
+                        due,
+                        start_iso=s_iso,
+                        end_iso=e_iso,
+                        parent_id=model.parent_id,
+                        series_id=series_id,
+                        tag_id=model.tag_id,
+                        project_id=model.project_id,
+                    )
+                else:
+                    self.store.upsert_task(
+                        None,
+                        model.title or "Untitled",
+                        model.notes or "",
+                        due,
+                        start_iso=s_iso,
+                        end_iso=e_iso,
+                        parent_id=model.parent_id,
+                        series_id=series_id,
+                        tag_id=model.tag_id,
+                        project_id=model.project_id,
+                    )
+
+            # Mevcut kaydın id’sini güncelle (yeni yaratmadıysan da garanti)
+            if not model.id:
+                # İlk eklenenin id’sini geri yakalamak istiyorsan burada db’den çekebilirsin;
+                # şimdilik gerekli değil.
+                pass
+
         else:
-            tid = self.store.upsert_task(model.id, model.title or "Untitled", model.notes or "", due_iso,
-                                         start_iso=start_iso, end_iso=end_iso, parent_id=model.parent_id,
-                                         series_id=model.series_id, tag_id=model.tag_id, project_id=model.project_id)
+            # RRULE yoksa klasik tek kayıt upsert
+            tid = self.store.upsert_task(
+                model.id,
+                model.title or "Untitled",
+                model.notes or "",
+                due_iso,
+                start_iso=start_iso,
+                end_iso=end_iso,
+                parent_id=model.parent_id,
+                series_id=model.series_id,
+                tag_id=model.tag_id,
+                project_id=model.project_id,
+            )
             if not model.id:
                 model.id = tid
 
