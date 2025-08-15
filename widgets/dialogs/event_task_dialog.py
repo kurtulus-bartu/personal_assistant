@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List, Tuple
 from PyQt6 import QtCore, QtWidgets
 
@@ -18,6 +18,7 @@ class ItemModel:
     parent_id: Optional[int] = None
     tag_id: Optional[int] = None
     project_id: Optional[int] = None
+    children: List[Tuple[int, str]] = field(default_factory=list)
 
 class EventTaskDialog(QtWidgets.QDialog):
     saved = QtCore.pyqtSignal(object)    # ItemModel
@@ -39,73 +40,110 @@ class EventTaskDialog(QtWidgets.QDialog):
         self.setMinimumWidth(480)
 
         main = QtWidgets.QVBoxLayout(self)
-        main.setContentsMargins(14,14,14,14); main.setSpacing(10)
+        main.setContentsMargins(14, 14, 14, 14)
+        main.setSpacing(10)
+
+        body = QtWidgets.QHBoxLayout()
+        body.setSpacing(10)
+        main.addLayout(body, 1)
+
+        left = QtWidgets.QVBoxLayout()
+        left.setSpacing(10)
+        right = QtWidgets.QVBoxLayout()
+        right.setSpacing(10)
+        body.addLayout(left, 1)
+        body.addLayout(right, 1)
 
         # Title
-        self.edt_title = QtWidgets.QLineEdit(); self.edt_title.setPlaceholderText("Title")
-        main.addWidget(self.edt_title)
+        self.edt_title = QtWidgets.QLineEdit()
+        self.edt_title.setPlaceholderText("Title")
+        left.addWidget(self.edt_title)
 
         # Notes
-        self.edt_notes = QtWidgets.QPlainTextEdit(); self.edt_notes.setPlaceholderText("Notes…")
+        self.edt_notes = QtWidgets.QPlainTextEdit()
+        self.edt_notes.setPlaceholderText("Notes…")
         self.edt_notes.setFixedHeight(100)
-        main.addWidget(self.edt_notes)
+        left.addWidget(self.edt_notes)
 
-        # Parent selection
-        parent_row = QtWidgets.QHBoxLayout(); parent_row.setSpacing(8)
-        self.cmb_parent = QtWidgets.QComboBox()
-        self.cmb_parent.addItem("None", None)
-        for pid, title in self._parent_options:
-            self.cmb_parent.addItem(title, pid)
-        parent_row.addWidget(QtWidgets.QLabel("Parent"))
-        parent_row.addWidget(self.cmb_parent, 1)
-        main.addLayout(parent_row)
+        # Subtask list
+        left.addWidget(QtWidgets.QLabel("Linked Tasks"))
+        self.lst_children = QtWidgets.QListWidget()
+        left.addWidget(self.lst_children, 1)
 
         # Tag selection
-        tag_row = QtWidgets.QHBoxLayout(); tag_row.setSpacing(8)
+        tag_row = QtWidgets.QHBoxLayout()
+        tag_row.setSpacing(8)
         self.cmb_tag = QtWidgets.QComboBox()
         self.cmb_tag.addItem("None", None)
         for tid, name in self._tag_options:
             self.cmb_tag.addItem(name, tid)
         tag_row.addWidget(QtWidgets.QLabel("Tag"))
         tag_row.addWidget(self.cmb_tag, 1)
-        main.addLayout(tag_row)
+        right.addLayout(tag_row)
 
         # Project selection
-        proj_row = QtWidgets.QHBoxLayout(); proj_row.setSpacing(8)
+        proj_row = QtWidgets.QHBoxLayout()
+        proj_row.setSpacing(8)
         self.cmb_project = QtWidgets.QComboBox()
         self.cmb_project.addItem("None", None)
         for pid, name, _ in self._project_options:
             self.cmb_project.addItem(name, pid)
         proj_row.addWidget(QtWidgets.QLabel("Project"))
         proj_row.addWidget(self.cmb_project, 1)
-        main.addLayout(proj_row)
+        right.addLayout(proj_row)
+
+        # Parent selection
+        parent_row = QtWidgets.QHBoxLayout()
+        parent_row.setSpacing(8)
+        self.cmb_parent = QtWidgets.QComboBox()
+        self.cmb_parent.addItem("None", None)
+        for pid, title in self._parent_options:
+            self.cmb_parent.addItem(title, pid)
+        parent_row.addWidget(QtWidgets.QLabel("Parent"))
+        parent_row.addWidget(self.cmb_parent, 1)
+        right.addLayout(parent_row)
+
+        right.addStretch(1)
 
         # Date + time row
-        row = QtWidgets.QHBoxLayout(); row.setSpacing(8)
+        row = QtWidgets.QHBoxLayout()
+        row.setSpacing(8)
         self.date_edit = QtWidgets.QDateEdit(calendarPopup=True)
         self.date_edit.setDisplayFormat("yyyy-MM-dd")
         self.chk_time = QtWidgets.QCheckBox("Has time (event)")
-        self.start_edit = QtWidgets.QTimeEdit(); self.end_edit = QtWidgets.QTimeEdit()
-        self.start_edit.setDisplayFormat("HH:mm"); self.end_edit.setDisplayFormat("HH:mm")
-        row.addWidget(QtWidgets.QLabel("Date")); row.addWidget(self.date_edit)
-        row.addSpacing(12); row.addWidget(self.chk_time)
-        row.addSpacing(12); row.addWidget(QtWidgets.QLabel("Start")); row.addWidget(self.start_edit)
-        row.addWidget(QtWidgets.QLabel("End")); row.addWidget(self.end_edit, 1)
-        main.addLayout(row)
+        self.start_edit = QtWidgets.QTimeEdit()
+        self.end_edit = QtWidgets.QTimeEdit()
+        self.start_edit.setDisplayFormat("HH:mm")
+        self.end_edit.setDisplayFormat("HH:mm")
+        row.addWidget(QtWidgets.QLabel("Date"))
+        row.addWidget(self.date_edit)
+        row.addSpacing(12)
+        row.addWidget(self.chk_time)
+        row.addSpacing(12)
+        row.addWidget(QtWidgets.QLabel("Start"))
+        row.addWidget(self.start_edit)
+        row.addWidget(QtWidgets.QLabel("End"))
+        row.addWidget(self.end_edit, 1)
+        right.addLayout(row)
 
         # Recurrence
-        rec_row = QtWidgets.QHBoxLayout(); rec_row.setSpacing(8)
+        rec_row = QtWidgets.QHBoxLayout()
+        rec_row.setSpacing(8)
         self.cmb_recur = QtWidgets.QComboBox()
         self.cmb_recur.addItems(["None", "Weekdays", "Daily", "Weekly", "Custom"])
-        self.spn_count = QtWidgets.QSpinBox(); self.spn_count.setRange(1, 999); self.spn_count.setEnabled(False)
-        self.until_edit = QtWidgets.QDateEdit(calendarPopup=True); self.until_edit.setDisplayFormat("yyyy-MM-dd"); self.until_edit.setEnabled(False)
+        self.spn_count = QtWidgets.QSpinBox()
+        self.spn_count.setRange(1, 999)
+        self.spn_count.setEnabled(False)
+        self.until_edit = QtWidgets.QDateEdit(calendarPopup=True)
+        self.until_edit.setDisplayFormat("yyyy-MM-dd")
+        self.until_edit.setEnabled(False)
         rec_row.addWidget(QtWidgets.QLabel("Repeat"))
         rec_row.addWidget(self.cmb_recur, 1)
         rec_row.addWidget(QtWidgets.QLabel("Count"))
         rec_row.addWidget(self.spn_count)
         rec_row.addWidget(QtWidgets.QLabel("Until"))
         rec_row.addWidget(self.until_edit)
-        main.addLayout(rec_row)
+        right.addLayout(rec_row)
 
         # Buttons
         btn_row = QtWidgets.QHBoxLayout()
@@ -143,6 +181,9 @@ class EventTaskDialog(QtWidgets.QDialog):
     def _load_model(self, m: ItemModel):
         self.edt_title.setText(m.title or "")
         self.edt_notes.setPlainText(m.notes or "")
+        self.lst_children.clear()
+        for _, title in m.children:
+            self.lst_children.addItem(title)
         qd = m.date or QtCore.QDate.currentDate()
         self.date_edit.setDate(qd)
         has_time = (m.start is not None and m.end is not None) or (m.kind == "event")
@@ -241,6 +282,7 @@ class EventTaskDialog(QtWidgets.QDialog):
         m.tag_id = int(data) if data is not None else None
         data = self.cmb_project.currentData()
         m.project_id = int(data) if data is not None else None
+        m.children = list(self._model.children)
         self.saved.emit(m)
         self.accept()
 
