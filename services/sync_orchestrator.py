@@ -130,6 +130,12 @@ class SyncOrchestrator(QtCore.QObject):
         except Exception:
             pass
 
+    def get_task_by_id(self, task_id: int):
+        return self.db.get_task_by_id(task_id)
+
+    def get_linked_tasks(self, task_id: int):
+        return self.db.get_linked_tasks(task_id)
+
     # ---------- helpers ----------
     def _emit_all_from_local(self):
         self.tasksUpdated.emit(self.db.get_tasks())

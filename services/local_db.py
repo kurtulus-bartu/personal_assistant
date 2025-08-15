@@ -155,6 +155,13 @@ class LocalDB:
         r = self._conn.execute("SELECT * FROM tasks WHERE id=?", (int(task_id),)).fetchone()
         return dict(r) if r else None
 
+    def get_linked_tasks(self, task_id: int) -> List[Dict[str, Any]]:
+        rs = self._conn.execute(
+            "SELECT id, title, due_date as due FROM tasks WHERE parent_id=?",
+            (int(task_id),),
+        ).fetchall()
+        return [dict(r) for r in rs]
+
     def get_events(self) -> List[Dict[str, Any]]:
         rs = self._conn.execute("""
             SELECT *, id as task_id FROM tasks
