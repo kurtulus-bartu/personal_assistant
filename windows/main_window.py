@@ -37,7 +37,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # PlannerPage'i ÖNCE OLUŞTUR → sonra takvim buton ikonlarını ata
         self.page_planner = PlannerPage()
         # >>> Aylık takvim ileri/geri PNG ikonlarını burada veriyoruz
-        self.page_planner.left.setMonthNavIcons(
+        # Left panel holds the month navigation buttons; expose via
+        # ``left_panel_widget`` in ``PlannerPage``.
+        self.page_planner.left_panel_widget.setMonthNavIcons(
             "assets/icons/chev_left.png",   # senin sol yön PNG'in
             "assets/icons/chev_right.png",  # senin sağ yön PNG'in
             icon_px=18                      # buton üzerindeki ikon boyutu
