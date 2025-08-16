@@ -43,7 +43,8 @@ class CalendarDayView(QtWidgets.QWidget):
         self._z_order: List[int] = []
         self._drag_mode = None
         self._active_index = -1
-        self._drag_offset_minutes = 0
+        self._active_block: EventBlock | None = None
+        self._drag_offset_px = 0
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
 
@@ -187,19 +188,18 @@ class CalendarDayView(QtWidgets.QWidget):
 
         if e.button() != QtCore.Qt.MouseButton.LeftButton: return
         idx = self._hit_test(e.position().toPoint())
-        if idx == -1: return
+        if idx == -1:
+            return
         self._active_index = idx
         r = self._event_rects.get(idx)
-        if not r: return
-        if r.bottom()-6 <= e.position().y() <= r.bottom()+6:
+        if not r:
+            return
+        self._active_block = self._events[idx]
+        if r.bottom() - 6 <= e.position().y() <= r.bottom() + 6:
             self._drag_mode = 'resize'
         else:
             self._drag_mode = 'move'
-            evb = self._events[idx]
-            hour, minute = self._time_for_y(e.position().y())
-            click_minutes = hour*60 + minute
-            start_minutes = evb.start.hour*60 + evb.start.minute
-            self._drag_offset_minutes = click_minutes - start_minutes
+            self._drag_offset_px = int(e.position().y() - r.top())
         self.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
 
     def _start_external_drag(self, idx: int):
@@ -230,7 +230,9 @@ class CalendarDayView(QtWidgets.QWidget):
                 self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
             return
 
-        evb = self._events[self._active_index]
+        evb = self._active_block
+        if not evb:
+            return
         if self._drag_mode == 'resize':
             hour, minute = self._time_for_y(pos.y())
             tz = getattr(evb.end, 'tzinfo', None)
@@ -238,23 +240,33 @@ class CalendarDayView(QtWidgets.QWidget):
             if new_end <= evb.start:
                 new_end = evb.start + timedelta(minutes=self._snap_minutes)
             evb.end = new_end
-            self.blockResized.emit(evb)
         elif self._drag_mode == 'move':
-            hour, minute = self._time_for_y(pos.y())
-            target_minutes = hour * 60 + minute
-            start_minutes = max(0, min(24*60 - self._snap_minutes, target_minutes - self._drag_offset_minutes))
+            target_y = pos.y() - self._drag_offset_px
+            hour, minute = self._time_for_y(target_y)
+            start_minutes = hour * 60 + minute
+            start_minutes = max(0, min(24*60 - self._snap_minutes, start_minutes))
             dur = int((evb.end - evb.start).total_seconds() // 60)
             tz = getattr(evb.start, 'tzinfo', None)
             new_start = datetime(evb.start.year, evb.start.month, evb.start.day, start_minutes//60, start_minutes%60, tzinfo=tz)
             evb.start = new_start
             evb.end = new_start + timedelta(minutes=dur)
-            self.blockMoved.emit(evb)
         self.update()
 
     def mouseReleaseEvent(self, e: QtGui.QMouseEvent):
+        if self._drag_mode == 'move' and self._active_block is not None:
+            try:
+                self.blockMoved.emit(self._active_block)
+            except Exception:
+                pass
+        elif self._drag_mode == 'resize' and self._active_block is not None:
+            try:
+                self.blockResized.emit(self._active_block)
+            except Exception:
+                pass
         self._drag_mode = None
         self._active_index = -1
-        self._drag_offset_minutes = 0
+        self._active_block = None
+        self._drag_offset_px = 0
         self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
 
     def _hit_test(self, pt: QtCore.QPoint) -> int:
@@ -296,10 +308,12 @@ class CalendarDayView(QtWidgets.QWidget):
             r = QtCore.QRectF(base_r.x() + ev._col * col_w, base_r.y(), col_w - 3, base_r.height())
             self._event_rects[idx] = QtCore.QRect(int(r.x()), int(r.y()), int(r.width()), int(r.height()))
             self._z_order.append(idx)
-            fill = QtGui.QColor(21, 180, 185)
+            fill = QtGui.QColor(
+                COLOR_PRIMARY_BG if ev._colcount > 1 else COLOR_SECONDARY_BG
+            )
             if (ev.end - ev.start).total_seconds() <= _SMALL_BLOCK_MIN * 60:
-                fill = QtGui.QColor(fill).lighter(120)
-            p.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 60)))
+                fill = QtGui.QColor(fill).lighter(150)
+            p.setPen(QtGui.QPen(QtGui.QColor(COLOR_ACCENT)))
             p.setBrush(QtGui.QBrush(fill))
             p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), _ROUNDED_RADIUS, _ROUNDED_RADIUS)
             fm = p.fontMetrics()
@@ -311,7 +325,3 @@ class CalendarDayView(QtWidgets.QWidget):
                 text_y += fm.height()
                 p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
                 p.drawText(int(text_x), int(text_y), ev.meta)
-            if ev.due:
-                text_y += fm.height()
-                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-                p.drawText(int(text_x), int(text_y), ev.due)

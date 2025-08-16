@@ -169,15 +169,16 @@ class PlannerPage(QtWidgets.QWidget):
         content_l.setSpacing(8)
 
         class VScrollArea(QtWidgets.QScrollArea):
-            """ScrollArea that keeps week view scalable until a min column width."""
+            """ScrollArea that keeps calendar views within a min column width."""
 
-            def __init__(self, *a, min_day_w: int = 160, **k):
+            def __init__(self, *a, min_day_w: int = 160, days: int = 7, **k):
                 super().__init__(*a, **k)
                 self.setWidgetResizable(False)
                 self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
                 self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
                 self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
                 self._min_day_w = min_day_w
+                self._days = days
                 self.setStyleSheet(
                     f"""
                     QScrollBar:vertical {{
@@ -203,8 +204,7 @@ class PlannerPage(QtWidgets.QWidget):
                 widget = self.widget()
                 if widget is None:
                     return
-                # Minimum width: left timebar + 7 * min_day_w if available
-                min_w = self._min_day_w * 7
+                min_w = self._min_day_w * self._days
                 if hasattr(widget, "_left_timebar"):
                     min_w += getattr(widget, "_left_timebar", 0)
                 target_w = max(w, min_w)
@@ -215,8 +215,8 @@ class PlannerPage(QtWidgets.QWidget):
         if hasattr(self.week, "daySelected"):
             self.week.daySelected.connect(self._on_week_day_selected)
 
-        self.week_scroll = VScrollArea(min_day_w=120); self.week_scroll.setWidget(self.week)
-        self.day_scroll  = VScrollArea(); self.day_scroll.setWidget(self.day)
+        self.week_scroll = VScrollArea(min_day_w=120, days=7); self.week_scroll.setWidget(self.week)
+        self.day_scroll  = VScrollArea(min_day_w=120, days=1); self.day_scroll.setWidget(self.day)
 
         self.stacked = QtWidgets.QStackedWidget()
         self.stacked.addWidget(self.week_scroll)  # 0
