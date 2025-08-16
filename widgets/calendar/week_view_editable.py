@@ -251,11 +251,18 @@ class CalendarWeekView(QtWidgets.QWidget):
             return QtCore.QRectF(x + 2, start_y + 2, col_width - 6, max(18, end_y - start_y - 4))
         return QtCore.QRectF()
 
-    def _hit_test_block_index(self, pt: QtCore.QPoint) -> int:
+    def _hit_test_block_index(self, pt: QtCore.QPoint | QtCore.QPointF) -> int:
+        """Return index of the topmost event block under ``pt`` or ``-1``.
+
+        ``QtCore.QRectF.contains`` expects a ``QPointF`` argument, so the
+        provided point (which may be ``QPoint`` from mouse events) is converted
+        accordingly before testing each block's rectangle.
+        """
+        ptf = pt if isinstance(pt, QtCore.QPointF) else QtCore.QPointF(pt)
         topmost = -1
         for b in sorted(self._events, key=lambda x: self._duration_minutes(x), reverse=True):
             r = self._rect_for_block(b)
-            if r.contains(pt):
+            if r.contains(ptf):
                 topmost = self._events.index(b)
         return topmost
 
