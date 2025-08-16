@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import List, Tuple, Dict, Iterable, Any
+from typing import List, Tuple, Iterable
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import QDate
 from theme.colors import (
@@ -14,6 +14,8 @@ from theme.colors import (
 
 _ROUNDED_RADIUS = 8
 _SMALL_BLOCK_MIN = 45  # minutes
+_RESIZE_MARGIN_PX = 6  # alttan tutma payı
+_MIN_BLOCK_MIN = 15    # minimum etkinlik süresi (dakika)
 
 @dataclass
 class EventBlock:
@@ -44,13 +46,12 @@ class CalendarWeekView(QtWidgets.QWidget):
         self._left_timebar  = 64
         self._snap_minutes  = 15
         self._events: List[EventBlock] = []
-        self._event_rects: Dict[int, QtCore.QRect] = {}
         self._drag_index = -1
         self._dragging = False
         self._resizing = False
-        self._drag_start_dt: datetime | None = None
-        self._drag_block_snapshot: Tuple[datetime, datetime] | None = None
-        self._drag_offset_y = 0
+        self._grab_offset_min = 0
+        self._grab_offset_day = 0
+        self._orig_start_end: Tuple[datetime, datetime] | None = None
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
 
@@ -165,27 +166,35 @@ class CalendarWeekView(QtWidgets.QWidget):
 
     # --- mouse: move & double-click ---
     def mousePressEvent(self, e: QtGui.QMouseEvent):
-        if e.button() == QtCore.Qt.MouseButton.LeftButton:
-            idx = self._hit_test_block_index(e.position().toPoint())
+        if e.button() == QtCore.Qt.MouseButton.LeftButton and not (self._dragging or self._resizing):
+            pt = e.position().toPoint()
+            idx = self._hit_test_block_index(pt)
             if idx != -1:
                 self._drag_index = idx
-                b = self._events[self._drag_index]
-                rect = self._event_rects.get(idx, self._rect_for_block(b))
-                self._drag_block_snapshot = (b.start, b.end)
-                bottom_margin = 6
-                if abs(rect.bottom() - e.position().y()) <= bottom_margin:
+                b = self._events[idx]
+
+                if self._is_on_bottom_resize(b, pt):
                     self._resizing = True
-                    self._dragging = False
+                    self._orig_start_end = (b.start, b.end)
+                    self.update()
+                    return
                 else:
                     self._dragging = True
-                    self._resizing = False
-                    self._drag_start_dt = b.start
-                    self._drag_offset_y = e.position().y() - rect.top()
-                self.update()
-                return
+                    self._orig_start_end = (b.start, b.end)
+
+                    click_hour, click_min = self._time_for_y(pt.y())
+                    click_day_idx = self._day_index_for_x(pt.x())
+                    blk_day_idx = self._day_index_of_datetime(b.start)
+                    blk_min = b.start.hour * 60 + b.start.minute
+
+                    self._grab_offset_day = click_day_idx - blk_day_idx
+                    self._grab_offset_min = (click_hour * 60 + click_min) - blk_min
+
+                    self.update()
+                    return
             else:
                 try:
-                    start_dt, end_dt = self.dateTimeRangeAtPos(e.position().toPoint())
+                    start_dt, end_dt = self.dateTimeRangeAtPos(pt)
                     payload = {'start': start_dt, 'end': end_dt}
                     self.emptyCellClicked.emit(payload)
                 except Exception:
@@ -193,51 +202,74 @@ class CalendarWeekView(QtWidgets.QWidget):
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e: QtGui.QMouseEvent):
+        pt = e.position().toPoint()
+
         if self._dragging and 0 <= self._drag_index < len(self._events):
             b = self._events[self._drag_index]
-            start_y = e.position().toPoint().y() - self._drag_offset_y
-            hour, minute = self._time_for_y(int(start_y))
-            day_idx = self._day_index_for_x(e.position().toPoint().x())
-            new_start = datetime(self._anchor_monday.addDays(day_idx).year(),
-                                 self._anchor_monday.addDays(day_idx).month(),
-                                 self._anchor_monday.addDays(day_idx).day(),
-                                 hour, minute)
-            dur = b.end - b.start
+
+            cur_hour, cur_min = self._time_for_y(pt.y())
+            cur_day_idx = self._day_index_for_x(pt.x())
+
+            new_day_idx = cur_day_idx - self._grab_offset_day
+            date = self._anchor_monday.addDays(new_day_idx)
+            start_min = cur_hour * 60 + cur_min - self._grab_offset_min
+
+            dur = self._orig_start_end[1] - self._orig_start_end[0]
+
+            start_min = max(0, min(24 * 60 - max(_MIN_BLOCK_MIN, int(dur.total_seconds() // 60)), start_min))
+
+            new_start = datetime(date.year(), date.month(), date.day(), start_min // 60, start_min % 60)
             b.start = new_start
             b.end = new_start + dur
-            try:
-                self.blockMoved.emit(b)
-            except Exception:
-                pass
+
             self.update()
             return
+
         if self._resizing and 0 <= self._drag_index < len(self._events):
             b = self._events[self._drag_index]
-            hour, minute = self._time_for_y(e.position().toPoint().y())
-            day_idx = self._anchor_monday.daysTo(QDate(b.start.year, b.start.month, b.start.day))
-            new_end = datetime(self._anchor_monday.addDays(day_idx).year(),
-                               self._anchor_monday.addDays(day_idx).month(),
-                               self._anchor_monday.addDays(day_idx).day(),
-                               hour, minute)
-            if new_end <= b.start:
-                new_end = b.start + timedelta(minutes=self._snap_minutes)
+
+            cur_hour, cur_min = self._time_for_y(pt.y())
+            cur_day_idx = self._day_index_for_x(pt.x())
+            end_date = self._anchor_monday.addDays(cur_day_idx)
+            new_end = datetime(end_date.year(), end_date.month(), end_date.day(), cur_hour, cur_min)
+
+            min_end = b.start + timedelta(minutes=_MIN_BLOCK_MIN)
+            if new_end < min_end:
+                new_end = min_end
+
+            day_end = datetime(end_date.year(), end_date.month(), end_date.day(), 23, 59, 59)
+            if new_end > day_end:
+                new_end = day_end
+
             b.end = new_end
-            try:
-                self.blockResized.emit(b)
-            except Exception:
-                pass
             self.update()
             return
+
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e: QtGui.QMouseEvent):
-        if self._dragging or self._resizing:
-            self._dragging = False
-            self._resizing = False
+        if e.button() == QtCore.Qt.MouseButton.LeftButton and 0 <= self._drag_index < len(self._events):
+            b = self._events[self._drag_index]
+
+            if self._dragging:
+                self._dragging = False
+                try:
+                    self.blockMoved.emit(b)
+                except Exception:
+                    pass
+
+            elif self._resizing:
+                self._resizing = False
+                try:
+                    self.blockResized.emit(b)
+                except Exception:
+                    pass
+
             self._drag_index = -1
-            self._drag_block_snapshot = None
+            self._orig_start_end = None
             self.update()
             return
+
         super().mouseReleaseEvent(e)
 
     def mouseDoubleClickEvent(self, e: QtGui.QMouseEvent):
@@ -274,6 +306,10 @@ class CalendarWeekView(QtWidgets.QWidget):
     def _duration_minutes(self, b: EventBlock) -> int:
         return max(1, int((b.end - b.start).total_seconds() // 60))
 
+    def _day_index_of_datetime(self, dt: datetime) -> int:
+        qd = QtCore.QDate(dt.year, dt.month, dt.day)
+        return max(0, min(6, self._anchor_monday.daysTo(qd)))
+
     def _rect_for_block(self, b: EventBlock) -> QtCore.QRectF:
         day_idx = self._anchor_monday.daysTo(QDate(b.start.year, b.start.month, b.start.day))
         if 0 <= day_idx <= 6:
@@ -284,62 +320,62 @@ class CalendarWeekView(QtWidgets.QWidget):
             return QtCore.QRectF(x + 2, start_y + 2, col_width - 6, max(18, end_y - start_y - 4))
         return QtCore.QRectF()
 
-    def _hit_test_block_index(self, pt: QtCore.QPoint | QtCore.QPointF) -> int:
-        """Return index of the topmost event block under ``pt`` or ``-1``."""
-        ptf = pt if isinstance(pt, QtCore.QPointF) else QtCore.QPointF(pt)
-        for idx in sorted(self._event_rects.keys(), reverse=True):
-            if QtCore.QRectF(self._event_rects[idx]).contains(ptf):
-                return idx
-        for idx in range(len(self._events) - 1, -1, -1):
-            if self._rect_for_block(self._events[idx]).contains(ptf):
-                return idx
-        return -1
+    def _hit_test_block_index(self, pt: QtCore.QPoint) -> int:
+        """Üstte olanı (kısaysa daha üstte) seç."""
+        topmost = -1
+        for b in sorted(self._events, key=lambda x: self._duration_minutes(x), reverse=True):
+            r = self._rect_for_block(b)
+            if r.contains(pt):
+                topmost = self._events.index(b)
+        return topmost
+
+    def _is_on_bottom_resize(self, b: EventBlock, pt: QtCore.QPoint) -> bool:
+        """Alttan resize bölgesinde mi?"""
+        r = self._rect_for_block(b)
+        if r.isNull():
+            return False
+        bottom_band = QtCore.QRectF(r.x(), r.bottom() - _RESIZE_MARGIN_PX, r.width(), _RESIZE_MARGIN_PX)
+        return bottom_band.contains(pt)
 
     def _paint_blocks(self, p: QtGui.QPainter):
-        self._event_rects.clear()
+        # Büyükten küçüğe: küçükler en son (üstte) çizilsin
+        for b in sorted(self._events, key=lambda x: self._duration_minutes(x), reverse=True):
+            r = self._rect_for_block(b)
+            if r.isNull():
+                continue
 
-        events_by_day: dict[int, list[tuple[int, EventBlock]]] = {}
-        for idx, b in enumerate(self._events):
-            day_idx = self._anchor_monday.daysTo(QDate(b.start.year, b.start.month, b.start.day))
-            if 0 <= day_idx <= 6:
-                events_by_day.setdefault(day_idx, []).append((idx, b))
+            dur = self._duration_minutes(b)
 
-        for day_idx, items in events_by_day.items():
-            items.sort(key=lambda x: x[1].start)
-            active: list[tuple[int, EventBlock]] = []
-            for idx, b in items:
-                active = [a for a in active if a[1].end > b.start]
-                overlap = len(active) > 0
+            # Temel renk
+            base = QtGui.QColor(COLOR_ACCENT)
+            fill = QtGui.QColor(base)
 
-                r = self._rect_for_block(b)
-                if r.isNull():
-                    continue
-                self._event_rects[idx] = QtCore.QRect(int(r.x()), int(r.y()), int(r.width()), int(r.height()))
-                dur = self._duration_minutes(b)
-                fill = QtGui.QColor(COLOR_PRIMARY_BG if overlap else COLOR_SECONDARY_BG)
-                if dur <= _SMALL_BLOCK_MIN:
-                    fill = QtGui.QColor(COLOR_ACCENT)
-                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_ACCENT)))
-                p.setBrush(QtGui.QBrush(fill))
-                p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), _ROUNDED_RADIUS, _ROUNDED_RADIUS)
+            # Küçük etkinlik daha parlak ve ince sınır
+            if dur <= _SMALL_BLOCK_MIN:
+                fill = QtGui.QColor(base).lighter(140)
+                penc = QtGui.QColor(0, 0, 0, 40)
+            else:
+                penc = QtGui.QColor(0, 0, 0, 70)
 
-                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
+            p.setPen(QtGui.QPen(penc))
+            p.setBrush(QtGui.QBrush(fill))
+            p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), _ROUNDED_RADIUS, _ROUNDED_RADIUS)
+
+            p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
+            p.drawText(
+                r.adjusted(6, 2, -6, 0),
+                QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
+                b.title,
+            )
+            meta = getattr(b, "meta", "")
+            if meta:
+                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
                 p.drawText(
-                    r.adjusted(6, 2, -6, 0),
+                    r.adjusted(6, 18, -6, 0),
                     QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
-                    b.title,
+                    meta,
                 )
-                meta = getattr(b, "meta", "")
-                if meta:
-                    p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
-                    p.drawText(
-                        r.adjusted(6, 18, -6, 0),
-                        QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
-                        meta,
-                    )
-                    p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-
-                active.append((idx, b))
+                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
 
     # ---------- painting ----------
     def paintEvent(self, ev):
