@@ -306,12 +306,12 @@ class CalendarDayView(QtWidgets.QWidget):
             text_x = r.x() + 6
             text_y = r.y() + fm.ascent() + 2
             p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-            p.drawText(text_x, text_y, ev.title)
+            p.drawText(int(text_x), int(text_y), ev.title)
             if ev.meta:
                 text_y += fm.height()
                 p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
-                p.drawText(text_x, text_y, ev.meta)
+                p.drawText(int(text_x), int(text_y), ev.meta)
             if ev.due:
                 text_y += fm.height()
                 p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-                p.drawText(text_x, text_y, ev.due)
+                p.drawText(int(text_x), int(text_y), ev.due)

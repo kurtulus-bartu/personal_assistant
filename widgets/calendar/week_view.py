@@ -4,7 +4,16 @@ from datetime import datetime, timedelta
 from typing import List, Tuple
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import QDate, QRect
-from theme.colors import COLOR_PRIMARY_BG, COLOR_SECONDARY_BG, COLOR_TEXT, COLOR_TEXT_MUTED, COLOR_ACCENT
+from theme.colors import (
+    COLOR_PRIMARY_BG,
+    COLOR_SECONDARY_BG,
+    COLOR_TEXT,
+    COLOR_TEXT_MUTED,
+    COLOR_ACCENT,
+)
+
+_ROUNDED_RADIUS = 8
+_SMALL_BLOCK_MIN = 45  # minutes
 
 
 @dataclass
@@ -165,24 +174,44 @@ class CalendarWeekView(QtWidgets.QWidget):
         p.setPen(QtGui.QPen(grid_color))
         p.drawLine(self._left_timebar, 0, self._left_timebar, self.height())
         # events
+        events_by_day: dict[int, list[EventBlock]] = {}
         for evb in self._events:
             day_idx = self._anchor_monday.daysTo(QDate(evb.start.year, evb.start.month, evb.start.day))
             if 0 <= day_idx <= 6:
-                x = int(self._left_timebar + day_idx * col_width) + 2
-                start_y = self._header_height + int((evb.start.hour + evb.start.minute/60) * self._hour_height)
-                end_y = self._header_height + int((evb.end.hour + evb.end.minute/60) * self._hour_height)
-                r = QtCore.QRect(x + 2, start_y + 2, int(col_width) - 6, max(18, end_y - start_y - 4))
-                p.fillRect(r, QtGui.QColor(COLOR_ACCENT))
+                events_by_day.setdefault(day_idx, []).append(evb)
+
+        for day_idx, day_events in events_by_day.items():
+            day_events.sort(key=lambda e: e.start)
+            active: list[EventBlock] = []
+            for evb in day_events:
+                active = [a for a in active if a.end > evb.start]
+                overlap = len(active) > 0
+
+                x = self._left_timebar + day_idx * col_width + 2
+                start_y = self._header_height + (evb.start.hour + evb.start.minute/60) * self._hour_height
+                end_y = self._header_height + (evb.end.hour + evb.end.minute/60) * self._hour_height
+                r = QtCore.QRectF(x + 2, start_y + 2, col_width - 6, max(18, end_y - start_y - 4))
+
+                fill = QtGui.QColor(COLOR_PRIMARY_BG if overlap else COLOR_SECONDARY_BG)
+                dur = (evb.end - evb.start).total_seconds() / 60
+                if dur <= _SMALL_BLOCK_MIN:
+                    fill = QtGui.QColor(fill).lighter(120)
+                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_ACCENT)))
+                p.setBrush(QtGui.QBrush(fill))
+                p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), _ROUNDED_RADIUS, _ROUNDED_RADIUS)
+
                 fm = p.fontMetrics()
                 text_x = r.x() + 6
                 text_y = r.y() + fm.ascent()
                 p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-                p.drawText(text_x, text_y, evb.title)
+                p.drawText(int(text_x), int(text_y), evb.title)
                 if evb.meta:
                     text_y += fm.height()
                     p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
-                    p.drawText(text_x, text_y, evb.meta)
+                    p.drawText(int(text_x), int(text_y), evb.meta)
                 if evb.due:
                     text_y += fm.height()
                     p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-                    p.drawText(text_x, text_y, evb.due)
+                    p.drawText(int(text_x), int(text_y), evb.due)
+
+                active.append(evb)
