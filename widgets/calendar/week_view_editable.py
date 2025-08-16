@@ -325,7 +325,8 @@ class CalendarWeekView(QtWidgets.QWidget):
         topmost = -1
         for b in sorted(self._events, key=lambda x: self._duration_minutes(x), reverse=True):
             r = self._rect_for_block(b)
-            if r.contains(pt):
+            # QRectF.contains expects a QPointF (or coordinates); convert from QPoint
+            if r.contains(QtCore.QPointF(pt)):
                 topmost = self._events.index(b)
         return topmost
 
@@ -335,7 +336,8 @@ class CalendarWeekView(QtWidgets.QWidget):
         if r.isNull():
             return False
         bottom_band = QtCore.QRectF(r.x(), r.bottom() - _RESIZE_MARGIN_PX, r.width(), _RESIZE_MARGIN_PX)
-        return bottom_band.contains(pt)
+        # QRectF.contains expects a QPointF; ensure correct type
+        return bottom_band.contains(QtCore.QPointF(pt))
 
     def _paint_blocks(self, p: QtGui.QPainter):
         # Büyükten küçüğe: küçükler en son (üstte) çizilsin
