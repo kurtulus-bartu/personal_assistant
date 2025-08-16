@@ -47,8 +47,10 @@ class CalendarWeekView(QtWidgets.QWidget):
         self._event_rects: Dict[int, QtCore.QRect] = {}
         self._drag_index = -1
         self._dragging = False
+        self._resizing = False
         self._drag_start_dt: datetime | None = None
         self._drag_block_snapshot: Tuple[datetime, datetime] | None = None
+        self._drag_offset_y = 0
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
 
@@ -167,10 +169,18 @@ class CalendarWeekView(QtWidgets.QWidget):
             idx = self._hit_test_block_index(e.position().toPoint())
             if idx != -1:
                 self._drag_index = idx
-                self._dragging = True
                 b = self._events[self._drag_index]
-                self._drag_start_dt = b.start
+                rect = self._event_rects.get(idx, self._rect_for_block(b))
                 self._drag_block_snapshot = (b.start, b.end)
+                bottom_margin = 6
+                if abs(rect.bottom() - e.position().y()) <= bottom_margin:
+                    self._resizing = True
+                    self._dragging = False
+                else:
+                    self._dragging = True
+                    self._resizing = False
+                    self._drag_start_dt = b.start
+                    self._drag_offset_y = e.position().y() - rect.top()
                 self.update()
                 return
             else:
@@ -185,7 +195,8 @@ class CalendarWeekView(QtWidgets.QWidget):
     def mouseMoveEvent(self, e: QtGui.QMouseEvent):
         if self._dragging and 0 <= self._drag_index < len(self._events):
             b = self._events[self._drag_index]
-            hour, minute = self._time_for_y(e.position().toPoint().y())
+            start_y = e.position().toPoint().y() - self._drag_offset_y
+            hour, minute = self._time_for_y(int(start_y))
             day_idx = self._day_index_for_x(e.position().toPoint().x())
             new_start = datetime(self._anchor_monday.addDays(day_idx).year(),
                                  self._anchor_monday.addDays(day_idx).month(),
@@ -200,11 +211,29 @@ class CalendarWeekView(QtWidgets.QWidget):
                 pass
             self.update()
             return
+        if self._resizing and 0 <= self._drag_index < len(self._events):
+            b = self._events[self._drag_index]
+            hour, minute = self._time_for_y(e.position().toPoint().y())
+            day_idx = self._anchor_monday.daysTo(QDate(b.start.year, b.start.month, b.start.day))
+            new_end = datetime(self._anchor_monday.addDays(day_idx).year(),
+                               self._anchor_monday.addDays(day_idx).month(),
+                               self._anchor_monday.addDays(day_idx).day(),
+                               hour, minute)
+            if new_end <= b.start:
+                new_end = b.start + timedelta(minutes=self._snap_minutes)
+            b.end = new_end
+            try:
+                self.blockResized.emit(b)
+            except Exception:
+                pass
+            self.update()
+            return
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e: QtGui.QMouseEvent):
-        if self._dragging:
+        if self._dragging or self._resizing:
             self._dragging = False
+            self._resizing = False
             self._drag_index = -1
             self._drag_block_snapshot = None
             self.update()
@@ -256,19 +285,15 @@ class CalendarWeekView(QtWidgets.QWidget):
         return QtCore.QRectF()
 
     def _hit_test_block_index(self, pt: QtCore.QPoint | QtCore.QPointF) -> int:
-        """Return index of the topmost event block under ``pt`` or ``-1``.
-
-        ``QtCore.QRectF.contains`` expects a ``QPointF`` argument, so the
-        provided point (which may be ``QPoint`` from mouse events) is converted
-        accordingly before testing each block's rectangle.
-        """
+        """Return index of the topmost event block under ``pt`` or ``-1``."""
         ptf = pt if isinstance(pt, QtCore.QPointF) else QtCore.QPointF(pt)
-        topmost = -1
-        for b in sorted(self._events, key=lambda x: self._duration_minutes(x), reverse=True):
-            r = self._rect_for_block(b)
-            if r.contains(ptf):
-                topmost = self._events.index(b)
-        return topmost
+        for idx in sorted(self._event_rects.keys(), reverse=True):
+            if QtCore.QRectF(self._event_rects[idx]).contains(ptf):
+                return idx
+        for idx in range(len(self._events) - 1, -1, -1):
+            if self._rect_for_block(self._events[idx]).contains(ptf):
+                return idx
+        return -1
 
     def _paint_blocks(self, p: QtGui.QPainter):
         self._event_rects.clear()
@@ -293,7 +318,7 @@ class CalendarWeekView(QtWidgets.QWidget):
                 dur = self._duration_minutes(b)
                 fill = QtGui.QColor(COLOR_PRIMARY_BG if overlap else COLOR_SECONDARY_BG)
                 if dur <= _SMALL_BLOCK_MIN:
-                    fill = QtGui.QColor(fill).lighter(120)
+                    fill = QtGui.QColor(COLOR_ACCENT)
                 p.setPen(QtGui.QPen(QtGui.QColor(COLOR_ACCENT)))
                 p.setBrush(QtGui.QBrush(fill))
                 p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), _ROUNDED_RADIUS, _ROUNDED_RADIUS)
