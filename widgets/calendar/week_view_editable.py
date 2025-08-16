@@ -341,6 +341,7 @@ class CalendarWeekView(QtWidgets.QWidget):
 
     def _paint_blocks(self, p: QtGui.QPainter):
         # Büyükten küçüğe: küçükler en son (üstte) çizilsin
+        drawn_rects: list[QtCore.QRectF] = []
         for b in sorted(self._events, key=lambda x: self._duration_minutes(x), reverse=True):
             r = self._rect_for_block(b)
             if r.isNull():
@@ -348,8 +349,11 @@ class CalendarWeekView(QtWidgets.QWidget):
 
             dur = self._duration_minutes(b)
 
-            # Temel renk (day view ile aynı)
-            base = QtGui.QColor(COLOR_SECONDARY_BG)
+            # Daha önce çizilen bloklarla çakışma kontrolü
+            overlap = any(r.intersects(prev) for prev in drawn_rects)
+
+            # Temel renk: çakışan küçük bloklar için primary
+            base = QtGui.QColor(COLOR_PRIMARY_BG if overlap else COLOR_SECONDARY_BG)
             fill = QtGui.QColor(base)
 
             # Küçük etkinlik daha parlak
@@ -375,6 +379,8 @@ class CalendarWeekView(QtWidgets.QWidget):
                     meta,
                 )
                 p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
+
+            drawn_rects.append(r)
 
     # ---------- painting ----------
     def paintEvent(self, ev):
