@@ -12,6 +12,8 @@ class EventBlock:
     start: datetime
     end: datetime
     title: str = ""
+    meta: str = ""
+    due: str = ""
 
 class CalendarDayView(QtWidgets.QWidget):
     blockCreated = QtCore.pyqtSignal(object)
@@ -67,7 +69,19 @@ class CalendarDayView(QtWidgets.QWidget):
                 title = bytes(e.mimeData().data('application/x-task-title')).decode('utf-8')
             except Exception:
                 title = f"Task #{task_id}"
-        ev = EventBlock(task_id=task_id, start=start_dt, end=end_dt, title=title)
+        meta = ""
+        if e.mimeData().hasFormat('application/x-task-meta'):
+            try:
+                meta = bytes(e.mimeData().data('application/x-task-meta')).decode('utf-8')
+            except Exception:
+                meta = ""
+        due = ""
+        if e.mimeData().hasFormat('application/x-task-due'):
+            try:
+                due = bytes(e.mimeData().data('application/x-task-due')).decode('utf-8')
+            except Exception:
+                due = ""
+        ev = EventBlock(task_id=task_id, start=start_dt, end=end_dt, title=title, meta=meta, due=due)
         self.blockCreated.emit(ev)
         self._events.append(ev)
         self.update()
@@ -106,6 +120,8 @@ class CalendarDayView(QtWidgets.QWidget):
         mime = QtCore.QMimeData()
         mime.setData('application/x-task-id', str(evb.task_id).encode('utf-8'))
         mime.setData('application/x-task-title', evb.title.encode('utf-8'))
+        mime.setData('application/x-task-meta', evb.meta.encode('utf-8'))
+        mime.setData('application/x-task-due', evb.due.encode('utf-8'))
         drag = QtGui.QDrag(self)
         drag.setMimeData(mime)
         result = drag.exec(QtCore.Qt.DropAction.MoveAction)
@@ -209,7 +225,17 @@ class CalendarDayView(QtWidgets.QWidget):
             p.fillRect(r, fill)
             p.setPen(QtGui.QPen(QtGui.QColor("#5a5a5a")))
             p.drawRect(r)
+            evb = self._events[item["idx"]]
+            fm = p.fontMetrics()
+            text_x = r.x() + 6
+            text_y = r.y() + fm.ascent() + 2
             p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-            title = self._events[item["idx"]].title
-            p.drawText(r.adjusted(6, 2, -6, 0),
-                       QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft, title)
+            p.drawText(text_x, text_y, evb.title)
+            if evb.meta:
+                text_y += fm.height()
+                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
+                p.drawText(text_x, text_y, evb.meta)
+            if evb.due:
+                text_y += fm.height()
+                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
+                p.drawText(text_x, text_y, evb.due)
