@@ -268,35 +268,49 @@ class CalendarWeekView(QtWidgets.QWidget):
 
     def _paint_blocks(self, p: QtGui.QPainter):
         self._event_rects.clear()
-        for b in sorted(self._events, key=lambda x: self._duration_minutes(x), reverse=True):
-            r = self._rect_for_block(b)
-            if r.isNull():
-                continue
-            idx = self._events.index(b)
-            self._event_rects[idx] = QtCore.QRect(int(r.x()), int(r.y()), int(r.width()), int(r.height()))
-            dur = self._duration_minutes(b)
-            fill = QtGui.QColor(COLOR_ACCENT)
-            if dur <= _SMALL_BLOCK_MIN:
-                fill = QtGui.QColor(fill).lighter(120)
-            pen = QtGui.QPen(QtGui.QColor(0, 0, 0, 60))
-            p.setPen(pen)
-            p.setBrush(QtGui.QBrush(fill))
-            p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), _ROUNDED_RADIUS, _ROUNDED_RADIUS)
-            p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-            p.drawText(
-                r.adjusted(6, 2, -6, 0),
-                QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
-                b.title,
-            )
-            meta = getattr(b, "meta", "")
-            if meta:
-                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
-                p.drawText(
-                    r.adjusted(6, 18, -6, 0),
-                    QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
-                    meta,
-                )
+
+        events_by_day: dict[int, list[tuple[int, EventBlock]]] = {}
+        for idx, b in enumerate(self._events):
+            day_idx = self._anchor_monday.daysTo(QDate(b.start.year, b.start.month, b.start.day))
+            if 0 <= day_idx <= 6:
+                events_by_day.setdefault(day_idx, []).append((idx, b))
+
+        for day_idx, items in events_by_day.items():
+            items.sort(key=lambda x: x[1].start)
+            active: list[tuple[int, EventBlock]] = []
+            for idx, b in items:
+                active = [a for a in active if a[1].end > b.start]
+                overlap = len(active) > 0
+
+                r = self._rect_for_block(b)
+                if r.isNull():
+                    continue
+                self._event_rects[idx] = QtCore.QRect(int(r.x()), int(r.y()), int(r.width()), int(r.height()))
+                dur = self._duration_minutes(b)
+                fill = QtGui.QColor(COLOR_PRIMARY_BG if overlap else COLOR_SECONDARY_BG)
+                if dur <= _SMALL_BLOCK_MIN:
+                    fill = QtGui.QColor(fill).lighter(120)
+                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_ACCENT)))
+                p.setBrush(QtGui.QBrush(fill))
+                p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), _ROUNDED_RADIUS, _ROUNDED_RADIUS)
+
                 p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
+                p.drawText(
+                    r.adjusted(6, 2, -6, 0),
+                    QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
+                    b.title,
+                )
+                meta = getattr(b, "meta", "")
+                if meta:
+                    p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
+                    p.drawText(
+                        r.adjusted(6, 18, -6, 0),
+                        QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
+                        meta,
+                    )
+                    p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
+
+                active.append((idx, b))
 
     # ---------- painting ----------
     def paintEvent(self, ev):
