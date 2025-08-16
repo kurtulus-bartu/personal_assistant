@@ -102,6 +102,10 @@ class CalendarWeekView(QtWidgets.QWidget):
                     continue
                 start = datetime.fromisoformat(str(start_raw).replace("Z", "+00:00"))
                 end = datetime.fromisoformat(str(end_raw).replace("Z", "+00:00"))
+                if start.tzinfo is not None:
+                    start = start.astimezone().replace(tzinfo=None)
+                if end.tzinfo is not None:
+                    end = end.astimezone().replace(tzinfo=None)
             except Exception:
                 continue
             meta_parts = []
