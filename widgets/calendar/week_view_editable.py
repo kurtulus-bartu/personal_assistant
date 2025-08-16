@@ -13,6 +13,7 @@ class EventBlock:
     end: datetime
     title: str = ""
     id: int | None = None
+    meta: str = ""
     # opsiyonel not/rrule alanları UI tarafında taşınabilir
     notes: str | None = None
     rrule: str | None = None
@@ -93,12 +94,18 @@ class CalendarWeekView(QtWidgets.QWidget):
                 end = datetime.fromisoformat(str(end_raw).replace("Z", "+00:00"))
             except Exception:
                 continue
+            meta_parts = []
+            if ev.get("tag_name"): meta_parts.append(ev["tag_name"])
+            if ev.get("project_name"): meta_parts.append(ev["project_name"])
+            if ev.get("parent_title"): meta_parts.append(ev["parent_title"])
+            meta = ">".join(meta_parts)
             block = EventBlock(
                 task_id=int(ev.get("task_id") or ev.get("taskId") or 0),
                 start=start,
                 end=end,
                 title=ev.get("title", ""),
                 id=int(ev["id"]) if ev.get("id") is not None else None,
+                meta=meta,
                 notes=ev.get("notes"),
                 rrule=ev.get("rrule"),
             )
@@ -303,3 +310,12 @@ class CalendarWeekView(QtWidgets.QWidget):
                 QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
                 title,
             )
+            meta = getattr(self._events[idx], "meta", "")
+            if meta:
+                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
+                p.drawText(
+                    r.adjusted(6, 18, -6, 0),
+                    QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
+                    meta,
+                )
+                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))

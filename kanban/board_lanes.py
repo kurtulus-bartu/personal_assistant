@@ -1,10 +1,12 @@
 from PyQt6 import QtCore, QtGui, QtWidgets
 from theme.colors import COLOR_TEXT, COLOR_SECONDARY_BG, COLOR_TEXT_MUTED
 from typing import Dict, Tuple
+from datetime import datetime
 
 class TaskLane(QtWidgets.QListWidget):
     dropped = QtCore.pyqtSignal(int, str, str, str)  # task_id, title, meta, due
     droppedOnTask = QtCore.pyqtSignal(int, int)  # child_id, parent_id
+    emptyDoubleClicked = QtCore.pyqtSignal()
 
     def __init__(self, title: str, parent=None):
         super().__init__(parent)
@@ -54,6 +56,12 @@ class TaskLane(QtWidgets.QListWidget):
     def dragEnterEvent(self, e: QtGui.QDragEnterEvent):
         e.acceptProposedAction() if e.mimeData().hasFormat('application/x-task-id') else e.ignore()
 
+    def dragMoveEvent(self, e: QtGui.QDragMoveEvent):
+        if e.mimeData().hasFormat('application/x-task-id'):
+            e.acceptProposedAction()
+        else:
+            e.ignore()
+
     def dropEvent(self, e: QtGui.QDropEvent):
         if not e.mimeData().hasFormat('application/x-task-id'):
             e.ignore(); return
@@ -102,6 +110,14 @@ class TaskLane(QtWidgets.QListWidget):
         if parent_id is not None:
             self.droppedOnTask.emit(task_id, parent_id)
 
+    def mouseDoubleClickEvent(self, e: QtGui.QMouseEvent):
+        item = self.itemAt(e.position().toPoint())
+        if item is None:
+            self.emptyDoubleClicked.emit()
+            e.accept()
+        else:
+            super().mouseDoubleClickEvent(e)
+
     def _add_task_item(self, task_id: int, title: str | None = None,
                        meta: str | None = None, due: str | None = None):
         plain = title or f"Task #{task_id}"
@@ -129,7 +145,13 @@ class TaskLane(QtWidgets.QListWidget):
         lbl_left.setWordWrap(True)
         lbl_left.setText(left_html)
 
-        lbl_right = QtWidgets.QLabel(due or "")
+        due_disp = ""
+        if due:
+            try:
+                due_disp = datetime.fromisoformat(str(due).replace("Z", "+00:00")).date().isoformat()
+            except Exception:
+                due_disp = str(due).split(" ")[0]
+        lbl_right = QtWidgets.QLabel(due_disp)
         lbl_right.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight |
                                QtCore.Qt.AlignmentFlag.AlignVCenter)
 
@@ -161,6 +183,7 @@ class KanbanBoard(QtWidgets.QWidget):
     statusChanged = QtCore.pyqtSignal(int, str)  # (task_id, new_status)
     taskActivated = QtCore.pyqtSignal(int)       # task_id
     taskReparented = QtCore.pyqtSignal(int, int)  # child_id, parent_id
+    newTaskRequested = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -179,6 +202,7 @@ class KanbanBoard(QtWidgets.QWidget):
         for lane in (self.todo, self.inprog, self.done):
             lane.itemDoubleClicked.connect(self._emit_task_activated)
             lane.droppedOnTask.connect(self._emit_reparent)
+            lane.emptyDoubleClicked.connect(self.newTaskRequested.emit)
 
         def make_row(label: str, lane: TaskLane):
             row = QtWidgets.QVBoxLayout()

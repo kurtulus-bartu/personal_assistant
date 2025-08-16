@@ -230,6 +230,7 @@ class PlannerPage(QtWidgets.QWidget):
         self.project_bar.changed.connect(self.on_project_changed)
         r_l.addWidget(self.project_bar)
         r_l.addWidget(self.kanban, 1)
+        self.kanban.newTaskRequested.connect(lambda: self._open_new_task_dialog(self._anchor_date, QtCore.QTime(0,0), QtCore.QTime(0,0), False))
 
         proj_row = QtWidgets.QHBoxLayout(); proj_row.setSpacing(8)
         self.btn_add_project = QtWidgets.QPushButton("+ New Project")
@@ -250,27 +251,12 @@ class PlannerPage(QtWidgets.QWidget):
         r_l.addLayout(proj_row)
         h.addWidget(right)
 
-        # QSplitter setup
-        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
-        self.splitter.setHandleWidth(8)
-        self.splitter.setChildrenCollapsible(False)
-        self.splitter.addWidget(self.left_panel_widget)
-        self.splitter.addWidget(self.calendar_container)
-        self.splitter.setStretchFactor(0, 1)
-        self.splitter.setStretchFactor(1, 1)
-        self.splitter.setSizes([500, 500])
-        self.splitter.setStyleSheet(
-            """
-QSplitter::handle {
-  background: #2d2d2d;
-}
-QWidget#Card {
-  border: 1px solid #333; border-radius: 12px; background: #212121;
-}
-"""
-        )
-
-        root.addWidget(self.splitter, 1)
+        main_row = QtWidgets.QHBoxLayout()
+        main_row.setContentsMargins(0, 0, 0, 0)
+        main_row.setSpacing(8)
+        main_row.addWidget(self.left_panel_widget)
+        main_row.addWidget(self.calendar_container, 1)
+        root.addLayout(main_row, 1)
 
         # Başlangıç
         if hasattr(self.week, "setAnchorDate"):
