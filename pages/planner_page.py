@@ -212,6 +212,8 @@ class PlannerPage(QtWidgets.QWidget):
 
         self.week = CalendarWeekView(); self.week.setFixedHeight(self.week.sizeHint().height())
         self.day  = CalendarDayView();  self.day.setFixedHeight(self.day.sizeHint().height())
+        if hasattr(self.week, "daySelected"):
+            self.week.daySelected.connect(self._on_week_day_selected)
 
         self.week_scroll = VScrollArea(min_day_w=120); self.week_scroll.setWidget(self.week)
         self.day_scroll  = VScrollArea(); self.day_scroll.setWidget(self.day)
@@ -791,6 +793,8 @@ class PlannerPage(QtWidgets.QWidget):
     def on_view_changed(self, mode: str):
         self._view_mode = mode
         self.stacked.setCurrentIndex(0 if mode == "weekly" else 1)
+        if mode == "daily":
+            self._switch_to_day_view()
 
     def on_tags_changed(self, s: set):
         self._current_tag = next(iter(s)) if s else None
@@ -806,7 +810,25 @@ class PlannerPage(QtWidgets.QWidget):
 
     def on_anchor_date_changed(self, qdate: QtCore.QDate):
         self._anchor_date = qdate
-        if hasattr(self.week, "setAnchorDate"): self.week.setAnchorDate(qdate)
+        if hasattr(self.week, "setAnchorDate"):
+            self.week.setAnchorDate(qdate)
+        if hasattr(self.day, "set_date"):
+            self.day.set_date(qdate)
+
+    def _on_week_day_selected(self, qdate: QtCore.QDate):
+        if hasattr(self.day, "set_date"):
+            self.day.set_date(qdate)
+
+    def _switch_to_day_view(self):
+        qd = qdate = self._anchor_date
+        if hasattr(self.week, "current_selected_date"):
+            try:
+                qd = self.week.current_selected_date()
+            except Exception:
+                qd = self._anchor_date
+        if hasattr(self.day, "set_date"):
+            self.day.set_date(qd)
+        self.stacked.setCurrentIndex(1)
 
     # ---------------- Week view block hareketi ----------------
     def _on_block_created(self, ev: EventBlock):
@@ -821,12 +843,21 @@ class PlannerPage(QtWidgets.QWidget):
     def _on_block_moved(self, ev: EventBlock):
         tid = int(getattr(ev, "id", 0) or getattr(ev, "task_id", 0) or 0)
         if tid:
-            start_iso = QtCore.QDateTime(QtCore.QDate(ev.start.year, ev.start.month, ev.start.day),
-                                         QtCore.QTime(ev.start.hour, ev.start.minute)).toString(QtCore.Qt.DateFormat.ISODate)
-            end_iso   = QtCore.QDateTime(QtCore.QDate(ev.end.year, ev.end.month, ev.end.day),
-                                         QtCore.QTime(ev.end.hour, ev.end.minute)).toString(QtCore.Qt.DateFormat.ISODate)
+            start_iso = QtCore.QDateTime(
+                QtCore.QDate(ev.start.year, ev.start.month, ev.start.day),
+                QtCore.QTime(ev.start.hour, ev.start.minute),
+            ).toString(QtCore.Qt.DateFormat.ISODate)
+            end_iso = QtCore.QDateTime(
+                QtCore.QDate(ev.end.year, ev.end.month, ev.end.day),
+                QtCore.QTime(ev.end.hour, ev.end.minute),
+            ).toString(QtCore.Qt.DateFormat.ISODate)
             if start_iso and end_iso:
-                self.store.set_task_times(tid, start_iso, end_iso)
+                if hasattr(self.store, "update_task_times"):
+                    self.store.update_task_times(
+                        task_id=tid, start_iso=start_iso, end_iso=end_iso
+                    )
+                else:
+                    self.store.set_task_times(tid, start_iso, end_iso)
 
     def _on_block_resized(self, ev: EventBlock):
         self._on_block_moved(ev)
