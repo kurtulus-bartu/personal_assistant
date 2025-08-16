@@ -23,6 +23,7 @@ class CalendarWeekView(QtWidgets.QWidget):
     blockResized   = QtCore.pyqtSignal(object)
     conflict       = QtCore.pyqtSignal(object)
     blockActivated = QtCore.pyqtSignal(object)
+    emptyCellClicked = QtCore.pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -44,6 +45,15 @@ class CalendarWeekView(QtWidgets.QWidget):
     def eventAtPos(self, pt: QtCore.QPoint) -> EventBlock | None:
         idx = self._hit_test(pt)
         return self._events[idx] if idx != -1 else None
+
+    def dateTimeRangeAtPos(self, pt: QtCore.QPoint, duration_minutes: int = 60) -> tuple[datetime, datetime]:
+        """Return (start_dt, end_dt) snapped to grid at the given widget position."""
+        day_idx = self._day_index_for_x(pt.x())
+        date = self._anchor_monday.addDays(day_idx)
+        hour, minute = self._time_for_y(pt.y())
+        start_dt = datetime(date.year(), date.month(), date.day(), hour, minute)
+        end_dt = start_dt + timedelta(minutes=max(1, duration_minutes))
+        return start_dt, end_dt
 
     def setAnchorDate(self, qdate: QDate):
         delta = qdate.dayOfWeek() - 1
@@ -143,6 +153,14 @@ class CalendarWeekView(QtWidgets.QWidget):
                     self._drag_mode = 'move'
                 self.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
                 return
+            else:
+                # Boş grid tıklandı → tıklanan saate göre slot isteği
+                try:
+                    start_dt, end_dt = self.dateTimeRangeAtPos(e.position().toPoint())
+                    payload = {'start': start_dt, 'end': end_dt}
+                    self.emptyCellClicked.emit(payload)
+                except Exception:
+                    pass
         super().mousePressEvent(e)
 
     def mouseReleaseEvent(self, e: QtGui.QMouseEvent):

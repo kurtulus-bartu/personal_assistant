@@ -9,6 +9,7 @@ except Exception:
     rrulestr = None
 
 ISO_WEEKDAYS = ["MO","TU","WE","TH","FR","SA","SU"]
+DEFAULT_RRULE_COUNT = 24  # sonsuz seri yerine makul varsayılan
 
 @dataclass
 class ItemModel:
@@ -141,6 +142,8 @@ class RecurEditor(QtWidgets.QGroupBox):
             parts.append("UNTIL=" + dt_utc.strftime("%Y%m%dT%H%M%SZ"))
         elif self.endAfter.isChecked():
             parts.append(f"COUNT={self.countSpin.value()}")
+        elif self.endNever.isChecked() and self.freq.currentText() in ("Daily", "Weekly"):
+            parts.append(f"COUNT={DEFAULT_RRULE_COUNT}")
 
         return "RRULE:" + ";".join(parts)
 

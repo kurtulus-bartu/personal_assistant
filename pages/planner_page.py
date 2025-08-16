@@ -282,6 +282,7 @@ QWidget#Card {
         if hasattr(self.week, "blockMoved"):     self.week.blockMoved.connect(self._on_block_moved)
         if hasattr(self.week, "blockResized"):   self.week.blockResized.connect(self._on_block_resized)
         if hasattr(self.week, "blockActivated"): self.week.blockActivated.connect(self._open_event_dialog_from_block)
+        if hasattr(self.week, "emptyCellClicked"): self.week.emptyCellClicked.connect(self._on_week_empty_clicked)
         if hasattr(self.day,  "blockActivated"): self.day.blockActivated.connect(self._open_event_dialog_from_block)
 
         # Kanban “kart çift tık” sinyali varsa bağla (opsiyonel)
@@ -367,11 +368,20 @@ QWidget#Card {
                 if hit:
                     # Dolu – event bloğu: bırak, widget kendi blockActivated ile açsın
                     return False
-                # Boş – yeni görev
-                date = self._anchor_date
-                start, end = _next_round_hour()
-                self._open_new_task_dialog(date, start, end, default_has_time=False)
-                return True
+                # Boş – yeni görev (tıklanan saatlere göre)
+                try:
+                    start_dt, end_dt = self.week.dateTimeRangeAtPos(me.position().toPoint())
+                    qd = QtCore.QDate(start_dt.year, start_dt.month, start_dt.day)
+                    qs = QtCore.QTime(start_dt.hour, start_dt.minute)
+                    qe = QtCore.QTime(end_dt.hour, end_dt.minute)
+                    self._open_new_task_dialog(qd, qs, qe, default_has_time=True)
+                    return True
+                except Exception:
+                    # Fallback
+                    date = self._anchor_date
+                    start, end = _next_round_hour()
+                    self._open_new_task_dialog(date, start, end, default_has_time=False)
+                    return True
 
             # KANBAN: mümkünse kartı bul → düzenleme; bulunamazsa boş/kapsam dışı → yeni görev
             if obj is self.kanban:
@@ -555,6 +565,18 @@ QWidget#Card {
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
         dlg.exec()
+
+    def _on_week_empty_clicked(self, payload: dict):
+        try:
+            start_dt = payload.get('start'); end_dt = payload.get('end')
+            if start_dt and end_dt:
+                qd = QtCore.QDate(start_dt.year, start_dt.month, start_dt.day)
+                qs = QtCore.QTime(start_dt.hour, start_dt.minute)
+                qe = QtCore.QTime(end_dt.hour, end_dt.minute)
+                # Week: saatli etkinlik olarak aç
+                self._open_new_task_dialog(qd, qs, qe, default_has_time=True)
+        except Exception:
+            pass
 
     def _on_dialog_saved(self, model):
         start_iso = _to_iso_dt(model.date, model.start) if model.start and model.end else None

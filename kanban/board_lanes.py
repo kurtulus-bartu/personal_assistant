@@ -105,20 +105,42 @@ class TaskLane(QtWidgets.QListWidget):
     def _add_task_item(self, task_id: int, title: str | None = None,
                        meta: str | None = None, due: str | None = None):
         plain = title or f"Task #{task_id}"
-        left = plain
+        # Sol metin: TITLE (TAG>PROJECT>PARENT)
         if meta:
-            left += f" <span style='color:{COLOR_TEXT_MUTED};'>({meta})</span>"
-        right = f"<span>{due}</span>" if due else ""
-        html = f"<table width='100%'><tr><td>{left}</td><td align='right'>{right}</td></tr></table>"
+            left_html = f"{plain} <span style='color:{COLOR_TEXT_MUTED};'>({meta})</span>"
+        else:
+            left_html = plain
+
         it = QtWidgets.QListWidgetItem()
-        it.setData(QtCore.Qt.ItemDataRole.DisplayRole, html)
         it.setData(QtCore.Qt.ItemDataRole.UserRole, task_id)
         it.setData(QtCore.Qt.ItemDataRole.UserRole + 1, meta or "")
         it.setData(QtCore.Qt.ItemDataRole.UserRole + 2, due or "")
         it.setData(QtCore.Qt.ItemDataRole.UserRole + 3, plain)
-        it.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft)
-        it.setSizeHint(QtCore.QSize(self.viewport().width() - 12, 40))
+        it.setFlags(it.flags() | QtCore.Qt.ItemFlag.ItemIsDragEnabled
+                    | QtCore.Qt.ItemFlag.ItemIsSelectable
+                    | QtCore.Qt.ItemFlag.ItemIsEnabled)
+
+        # 2 eşit sütunlu widget
+        w = QtWidgets.QWidget()
+        row = QtWidgets.QHBoxLayout(w); row.setContentsMargins(8, 6, 8, 6); row.setSpacing(8)
+
+        lbl_left = QtWidgets.QLabel()
+        lbl_left.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        lbl_left.setWordWrap(True)
+        lbl_left.setText(left_html)
+
+        lbl_right = QtWidgets.QLabel(due or "")
+        lbl_right.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight |
+                               QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+        # İki sütun eşit genişlik
+        row.addWidget(lbl_left, 1)
+        row.addWidget(lbl_right, 1)
+
         self.addItem(it)
+        self.setItemWidget(it, w)
+        it.setSizeHint(QtCore.QSize(self.viewport().width() - 12,
+                                    max(40, w.sizeHint().height())))
 
     def remove_task(self, task_id: int):
         for i in range(self.count()-1, -1, -1):
@@ -182,7 +204,7 @@ class KanbanBoard(QtWidgets.QWidget):
             if t.get("tag_name"): meta_parts.append(t["tag_name"])
             if t.get("project_name"): meta_parts.append(t["project_name"])
             if t.get("parent_title"): meta_parts.append(t["parent_title"])
-            meta = ", ".join(meta_parts)
+            meta = ">".join(meta_parts)
             due = t.get("due") or t.get("due_date") or ""
             self._info_map[tid] = (disp_title, meta, due)
             lane._add_task_item(tid, disp_title, meta or None, due or None)
