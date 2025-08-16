@@ -1,9 +1,9 @@
 from PyQt6 import QtCore, QtGui, QtWidgets
-from theme.colors import COLOR_TEXT, COLOR_SECONDARY_BG
-from typing import Dict
+from theme.colors import COLOR_TEXT, COLOR_SECONDARY_BG, COLOR_TEXT_MUTED
+from typing import Dict, Tuple
 
 class TaskLane(QtWidgets.QListWidget):
-    dropped = QtCore.pyqtSignal(int, str)  # task_id, title
+    dropped = QtCore.pyqtSignal(int, str, str, str)  # task_id, title, meta, due
     droppedOnTask = QtCore.pyqtSignal(int, int)  # child_id, parent_id
 
     def __init__(self, title: str, parent=None):
@@ -29,17 +29,24 @@ class TaskLane(QtWidgets.QListWidget):
 
         self.setStyleSheet(
             f"color:{COLOR_TEXT}; background:{COLOR_SECONDARY_BG}; "
-            f"border:1px solid #3a3a3a; border-radius:8px;"
+            f"border:none; border-radius:8px;"
         )
 
-    def mimeTypes(self): return ['application/x-task-id', 'application/x-task-title']
+    def mimeTypes(self):
+        return ['application/x-task-id', 'application/x-task-title',
+                'application/x-task-meta', 'application/x-task-due']
 
     def startDrag(self, actions):
         item = self.currentItem()
         if not item: return
         mime = QtCore.QMimeData()
         mime.setData('application/x-task-id', str(item.data(QtCore.Qt.ItemDataRole.UserRole)).encode('utf-8'))
-        mime.setData('application/x-task-title', item.text().encode('utf-8'))
+        title = item.data(QtCore.Qt.ItemDataRole.UserRole + 3) or item.text()
+        mime.setData('application/x-task-title', str(title).encode('utf-8'))
+        meta = item.data(QtCore.Qt.ItemDataRole.UserRole + 1) or ""
+        due = item.data(QtCore.Qt.ItemDataRole.UserRole + 2) or ""
+        mime.setData('application/x-task-meta', str(meta).encode('utf-8'))
+        mime.setData('application/x-task-due', str(due).encode('utf-8'))
         drag = QtGui.QDrag(self)
         drag.setMimeData(mime)
         drag.exec(QtCore.Qt.DropAction.MoveAction)
@@ -57,6 +64,18 @@ class TaskLane(QtWidgets.QListWidget):
                 title = bytes(e.mimeData().data('application/x-task-title')).decode('utf-8')
             except Exception:
                 title = None
+        meta = ""
+        if e.mimeData().hasFormat('application/x-task-meta'):
+            try:
+                meta = bytes(e.mimeData().data('application/x-task-meta')).decode('utf-8')
+            except Exception:
+                meta = ""
+        due = ""
+        if e.mimeData().hasFormat('application/x-task-due'):
+            try:
+                due = bytes(e.mimeData().data('application/x-task-due')).decode('utf-8')
+            except Exception:
+                due = ""
 
         # Hedef item? (alt görev)
         target_item = self.itemAt(e.position().toPoint())
@@ -77,15 +96,26 @@ class TaskLane(QtWidgets.QListWidget):
             if self.item(i).data(QtCore.Qt.ItemDataRole.UserRole) == task_id:
                 e.acceptProposedAction(); return
 
-        self._add_task_item(task_id, title)
+        self._add_task_item(task_id, title, meta or None, due or None)
         e.acceptProposedAction()
-        self.dropped.emit(task_id, title or f"Task #{task_id}")
+        self.dropped.emit(task_id, title or f"Task #{task_id}", meta, due)
         if parent_id is not None:
             self.droppedOnTask.emit(task_id, parent_id)
 
-    def _add_task_item(self, task_id: int, title: str | None = None):
-        it = QtWidgets.QListWidgetItem(title or f"Task #{task_id}")
+    def _add_task_item(self, task_id: int, title: str | None = None,
+                       meta: str | None = None, due: str | None = None):
+        plain = title or f"Task #{task_id}"
+        left = plain
+        if meta:
+            left += f" <span style='color:{COLOR_TEXT_MUTED};'>({meta})</span>"
+        right = f"<span>{due}</span>" if due else ""
+        html = f"<table width='100%'><tr><td>{left}</td><td align='right'>{right}</td></tr></table>"
+        it = QtWidgets.QListWidgetItem()
+        it.setData(QtCore.Qt.ItemDataRole.DisplayRole, html)
         it.setData(QtCore.Qt.ItemDataRole.UserRole, task_id)
+        it.setData(QtCore.Qt.ItemDataRole.UserRole + 1, meta or "")
+        it.setData(QtCore.Qt.ItemDataRole.UserRole + 2, due or "")
+        it.setData(QtCore.Qt.ItemDataRole.UserRole + 3, plain)
         it.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft)
         it.setSizeHint(QtCore.QSize(self.viewport().width() - 12, 40))
         self.addItem(it)
@@ -118,11 +148,11 @@ class KanbanBoard(QtWidgets.QWidget):
         self.inprog = TaskLane("In Progress", self)
         self.done   = TaskLane("Done", self)
 
-        self.todo.dropped.connect(lambda tid, t: self._on_lane_drop(tid, "not started", t))
-        self.inprog.dropped.connect(lambda tid, t: self._on_lane_drop(tid, "in progress", t))
-        self.done.dropped.connect(lambda tid, t: self._on_lane_drop(tid, "done", t))
+        self.todo.dropped.connect(lambda tid, title, meta, due: self._on_lane_drop(tid, "not started", title, meta, due))
+        self.inprog.dropped.connect(lambda tid, title, meta, due: self._on_lane_drop(tid, "in progress", title, meta, due))
+        self.done.dropped.connect(lambda tid, title, meta, due: self._on_lane_drop(tid, "done", title, meta, due))
 
-        self._title_map: Dict[int, str] = {}
+        self._info_map: Dict[int, Tuple[str, str, str]] = {}
 
         for lane in (self.todo, self.inprog, self.done):
             lane.itemDoubleClicked.connect(self._emit_task_activated)
@@ -139,16 +169,23 @@ class KanbanBoard(QtWidgets.QWidget):
 
     # Public
     def set_tasks(self, tasks: list[dict]):
-        for lane in (self.todo, self.inprog, self.done): lane.clear()
-        self._title_map.clear()
+        for lane in (self.todo, self.inprog, self.done):
+            lane.clear()
+        self._info_map.clear()
         for t in tasks:
             tid = int(t["id"])
             title = t.get("title") or f"Task #{tid}"
-            self._title_map[tid] = title
             status = (t.get("status") or "not started").lower()
             lane = self.todo if status == "not started" else (self.inprog if status == "in progress" else self.done)
             disp_title = "  ↳ " + title if t.get("parent_id") else title
-            lane._add_task_item(tid, disp_title)
+            meta_parts = []
+            if t.get("tag_name"): meta_parts.append(t["tag_name"])
+            if t.get("project_name"): meta_parts.append(t["project_name"])
+            if t.get("parent_title"): meta_parts.append(t["parent_title"])
+            meta = ", ".join(meta_parts)
+            due = t.get("due") or t.get("due_date") or ""
+            self._info_map[tid] = (disp_title, meta, due)
+            lane._add_task_item(tid, disp_title, meta or None, due or None)
 
     def move_task(self, task_id: int, target: str):
         target = target.lower()
@@ -156,11 +193,12 @@ class KanbanBoard(QtWidgets.QWidget):
         lane = lanes.get(target); 
         if not lane: return False
         for l in lanes.values(): l.remove_task(task_id)
-        lane._add_task_item(task_id, self._title_map.get(task_id))
+        info = self._info_map.get(task_id, (None, None, None))
+        lane._add_task_item(task_id, info[0], info[1], info[2])
         self.statusChanged.emit(task_id, target); return True
 
-    def _on_lane_drop(self, task_id: int, new_status: str, title: str):
-        self._title_map[task_id] = title
+    def _on_lane_drop(self, task_id: int, new_status: str, title: str, meta: str, due: str):
+        self._info_map[task_id] = (title, meta, due)
         self.statusChanged.emit(task_id, new_status)
 
     def _emit_task_activated(self, item: QtWidgets.QListWidgetItem):

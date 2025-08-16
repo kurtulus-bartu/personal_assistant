@@ -207,12 +207,12 @@ class EventTaskDialog(QtWidgets.QDialog):
         body.setSpacing(10)
         main.addLayout(body, 1)
 
-        left = QtWidgets.QVBoxLayout()
-        left.setSpacing(10)
-        right = QtWidgets.QVBoxLayout()
-        right.setSpacing(10)
-        body.addLayout(left, 1)
-        body.addLayout(right, 1)
+        left_w = QtWidgets.QWidget(); right_w = QtWidgets.QWidget()
+        left = QtWidgets.QVBoxLayout(left_w); left.setSpacing(10)
+        right = QtWidgets.QVBoxLayout(right_w); right.setSpacing(10)
+        body.addWidget(left_w, 1)
+        body.addWidget(right_w, 1)
+        body.setStretch(0, 1); body.setStretch(1, 1)
 
         # Title
         self.edt_title = QtWidgets.QLineEdit()
@@ -229,38 +229,29 @@ class EventTaskDialog(QtWidgets.QDialog):
         self._build_linked_tasks_ui()
         left.addWidget(self.linkedGroup, 1)
 
-        # Tag selection
-        tag_row = QtWidgets.QHBoxLayout()
-        tag_row.setSpacing(8)
-        self.cmb_tag = QtWidgets.QComboBox()
-        self.cmb_tag.addItem("None", None)
+        # Tag/Project/Parent selection (aligned)
+        form = QtWidgets.QFormLayout(); form.setHorizontalSpacing(8)
+        lbl_w = 60
+
+        self.cmb_tag = QtWidgets.QComboBox(); self.cmb_tag.addItem("None", None)
         for tid, name in self._tag_options:
             self.cmb_tag.addItem(name, tid)
-        tag_row.addWidget(QtWidgets.QLabel("Tag"))
-        tag_row.addWidget(self.cmb_tag, 1)
-        right.addLayout(tag_row)
+        lbl = QtWidgets.QLabel("Tag"); lbl.setFixedWidth(lbl_w)
+        form.addRow(lbl, self.cmb_tag)
 
-        # Project selection
-        proj_row = QtWidgets.QHBoxLayout()
-        proj_row.setSpacing(8)
-        self.cmb_project = QtWidgets.QComboBox()
-        self.cmb_project.addItem("None", None)
+        self.cmb_project = QtWidgets.QComboBox(); self.cmb_project.addItem("None", None)
         for pid, name, _ in self._project_options:
             self.cmb_project.addItem(name, pid)
-        proj_row.addWidget(QtWidgets.QLabel("Project"))
-        proj_row.addWidget(self.cmb_project, 1)
-        right.addLayout(proj_row)
+        lbl = QtWidgets.QLabel("Project"); lbl.setFixedWidth(lbl_w)
+        form.addRow(lbl, self.cmb_project)
 
-        # Parent selection
-        parent_row = QtWidgets.QHBoxLayout()
-        parent_row.setSpacing(8)
-        self.cmb_parent = QtWidgets.QComboBox()
-        self.cmb_parent.addItem("None", None)
+        self.cmb_parent = QtWidgets.QComboBox(); self.cmb_parent.addItem("None", None)
         for pid, title in self._parent_options:
             self.cmb_parent.addItem(title, pid)
-        parent_row.addWidget(QtWidgets.QLabel("Parent"))
-        parent_row.addWidget(self.cmb_parent, 1)
-        right.addLayout(parent_row)
+        lbl = QtWidgets.QLabel("Parent"); lbl.setFixedWidth(lbl_w)
+        form.addRow(lbl, self.cmb_parent)
+
+        right.addLayout(form)
 
         right.addStretch(1)
 
@@ -322,7 +313,7 @@ class EventTaskDialog(QtWidgets.QDialog):
     def populate_linked_tasks(self, tasks):
         self.linkedList.clear()
         for t in tasks:
-            it = QtWidgets.QListWidgetItem(f"{t['title']} • {t.get('due','')}")
+            it = QtWidgets.QListWidgetItem(str(t['title']))
             it.setData(QtCore.Qt.ItemDataRole.UserRole, int(t['id']))
             self.linkedList.addItem(it)
 

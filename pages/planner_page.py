@@ -736,6 +736,18 @@ QWidget#Card {
         elif self._current_tag is not None:
             filtered = [t for t in filtered if int(t.get("tag_id") or 0) == int(self._current_tag)]
 
+        tag_map = {int(t["id"]): t.get("name", "") for t in self._all_tags}
+        proj_map = {int(p["id"]): p.get("name", "") for p in self._all_projects}
+        title_map = {int(t["id"]): t.get("title", "") for t in self._all_tasks}
+        for t in filtered:
+            tid = int(t.get("tag_id") or 0)
+            pid = int(t.get("project_id") or 0)
+            par = int(t.get("parent_id") or 0)
+            t["tag_name"] = tag_map.get(tid)
+            t["project_name"] = proj_map.get(pid)
+            t["parent_title"] = title_map.get(par)
+            t["due"] = t.get("due") or t.get("due_date")
+
         if hasattr(self.kanban, "set_tasks"):
             self.kanban.set_tasks(filtered)
 
@@ -747,6 +759,18 @@ QWidget#Card {
             evs = [e for e in evs if int(e.get("project_id") or 0) == int(self._current_project)]
         elif self._current_tag is not None:
             evs = [e for e in evs if int(e.get("tag_id") or 0) == int(self._current_tag)]
+
+        tag_map = {int(t["id"]): t.get("name", "") for t in self._all_tags}
+        proj_map = {int(p["id"]): p.get("name", "") for p in self._all_projects}
+        title_map = {int(t["id"]): t.get("title", "") for t in self._all_tasks}
+        for e in evs:
+            tid = int(e.get("tag_id") or 0)
+            pid = int(e.get("project_id") or 0)
+            par = int(e.get("parent_id") or 0)
+            e["tag_name"] = tag_map.get(tid)
+            e["project_name"] = proj_map.get(pid)
+            e["parent_title"] = title_map.get(par)
+            e["due"] = e.get("due") or e.get("due_date")
 
         if hasattr(self.week, "setEvents"):
             try: self.week.setEvents(evs)

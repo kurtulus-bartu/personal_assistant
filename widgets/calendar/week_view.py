@@ -13,6 +13,8 @@ class EventBlock:
     start: datetime
     end: datetime
     title: str = ""
+    meta: str = ""
+    due: str = ""
 
 
 class CalendarWeekView(QtWidgets.QWidget):
@@ -50,12 +52,19 @@ class CalendarWeekView(QtWidgets.QWidget):
                 end = datetime.fromisoformat(ev["end"])
             except Exception:
                 continue
+            meta_parts = []
+            if ev.get("tag_name"): meta_parts.append(ev.get("tag_name"))
+            if ev.get("project_name"): meta_parts.append(ev.get("project_name"))
+            if ev.get("parent_title"): meta_parts.append(ev.get("parent_title"))
+            meta = ", ".join(filter(None, meta_parts))
             self._events.append(
                 EventBlock(
                     task_id=int(ev.get("task_id") or ev.get("taskId") or 0),
                     start=start,
                     end=end,
                     title=ev.get("title", ""),
+                    meta=meta,
+                    due=ev.get("due", ""),
                 )
             )
         self.update()
@@ -96,7 +105,25 @@ class CalendarWeekView(QtWidgets.QWidget):
         hour, minute = self._time_for_y(pos.y())
         start_dt = datetime(date.year(), date.month(), date.day(), hour, minute)
         end_dt = start_dt + timedelta(minutes=30)
-        ev = EventBlock(task_id=task_id, start=start_dt, end=end_dt, title=f"Task #{task_id}")
+        title = f"Task #{task_id}"
+        if e.mimeData().hasFormat('application/x-task-title'):
+            try:
+                title = bytes(e.mimeData().data('application/x-task-title')).decode('utf-8')
+            except Exception:
+                pass
+        meta = ""
+        if e.mimeData().hasFormat('application/x-task-meta'):
+            try:
+                meta = bytes(e.mimeData().data('application/x-task-meta')).decode('utf-8')
+            except Exception:
+                meta = ""
+        due = ""
+        if e.mimeData().hasFormat('application/x-task-due'):
+            try:
+                due = bytes(e.mimeData().data('application/x-task-due')).decode('utf-8')
+            except Exception:
+                due = ""
+        ev = EventBlock(task_id=task_id, start=start_dt, end=end_dt, title=title, meta=meta, due=due)
         self.blockCreated.emit(ev)
         self.addEvent(ev)
         e.acceptProposedAction()
@@ -146,9 +173,16 @@ class CalendarWeekView(QtWidgets.QWidget):
                 end_y = self._header_height + int((evb.end.hour + evb.end.minute/60) * self._hour_height)
                 r = QtCore.QRect(x + 2, start_y + 2, int(col_width) - 6, max(18, end_y - start_y - 4))
                 p.fillRect(r, QtGui.QColor(COLOR_ACCENT))
+                fm = p.fontMetrics()
+                text_x = r.x() + 6
+                text_y = r.y() + fm.ascent()
                 p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-                p.drawText(
-                    r.adjusted(6, 0, -6, 0),
-                    QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft,
-                    evb.title,
-                )
+                p.drawText(text_x, text_y, evb.title)
+                if evb.meta:
+                    text_y += fm.height()
+                    p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
+                    p.drawText(text_x, text_y, evb.meta)
+                if evb.due:
+                    text_y += fm.height()
+                    p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
+                    p.drawText(text_x, text_y, evb.due)
