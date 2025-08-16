@@ -348,18 +348,15 @@ class CalendarWeekView(QtWidgets.QWidget):
 
             dur = self._duration_minutes(b)
 
-            # Temel renk
-            base = QtGui.QColor(COLOR_ACCENT)
+            # Temel renk (day view ile aynı)
+            base = QtGui.QColor(COLOR_SECONDARY_BG)
             fill = QtGui.QColor(base)
 
-            # Küçük etkinlik daha parlak ve ince sınır
+            # Küçük etkinlik daha parlak
             if dur <= _SMALL_BLOCK_MIN:
-                fill = QtGui.QColor(base).lighter(140)
-                penc = QtGui.QColor(0, 0, 0, 40)
-            else:
-                penc = QtGui.QColor(0, 0, 0, 70)
+                fill = QtGui.QColor(base).lighter(150)
 
-            p.setPen(QtGui.QPen(penc))
+            p.setPen(QtGui.QPen(QtGui.QColor(COLOR_ACCENT)))
             p.setBrush(QtGui.QBrush(fill))
             p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), _ROUNDED_RADIUS, _ROUNDED_RADIUS)
 
