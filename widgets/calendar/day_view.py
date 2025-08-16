@@ -1,10 +1,19 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Iterable
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import QDate
-from theme.colors import COLOR_PRIMARY_BG, COLOR_SECONDARY_BG, COLOR_TEXT, COLOR_TEXT_MUTED, COLOR_ACCENT
+from theme.colors import (
+    COLOR_PRIMARY_BG,
+    COLOR_SECONDARY_BG,
+    COLOR_TEXT,
+    COLOR_TEXT_MUTED,
+    COLOR_ACCENT,
+)
+
+_ROUNDED_RADIUS = 8
+_SMALL_BLOCK_MIN = 45  # minutes
 
 @dataclass
 class EventBlock:
@@ -23,12 +32,13 @@ class CalendarDayView(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._date = QDate.currentDate()
+        self._anchor_date = QDate.currentDate()
         self._header_h = 28
         self._hour_h = 48
         self._left_timebar = 56
         self._snap_minutes = 15
         self._events: List[EventBlock] = []
+        self._all_events: List[dict] = []
         self._event_rects: Dict[int, QtCore.QRect] = {}
         self._z_order: List[int] = []
         self._drag_mode = None
@@ -40,9 +50,80 @@ class CalendarDayView(QtWidgets.QWidget):
     def sizeHint(self):
         return QtCore.QSize(800, self._header_h + 24 * self._hour_h)
 
-    def setDate(self, date: QDate):
-        self._date = date
+    def set_date(self, qdate: QDate):
+        self._anchor_date = QtCore.QDate(qdate)
+        self.reload()
+
+    def setDate(self, date: QDate):  # backward compat
+        self.set_date(date)
+
+    def setEvents(self, events: Iterable[dict]):
+        self._all_events = list(events)
+        self.reload()
+
+    def reload(self):
+        self._events.clear()
+        for ev in self._all_events:
+            try:
+                start_raw = (
+                    ev.get("start")
+                    or ev.get("start_ts")
+                    or ev.get("starts_at")
+                )
+                end_raw = (
+                    ev.get("end")
+                    or ev.get("end_ts")
+                    or ev.get("ends_at")
+                )
+                if not start_raw or not end_raw:
+                    continue
+                start = datetime.fromisoformat(str(start_raw).replace("Z", "+00:00"))
+                end = datetime.fromisoformat(str(end_raw).replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if start.date() != self._anchor_date.toPyDate():
+                continue
+            meta_parts = []
+            if ev.get("tag_name"): meta_parts.append(ev["tag_name"])
+            if ev.get("project_name"): meta_parts.append(ev["project_name"])
+            if ev.get("parent_title"): meta_parts.append(ev["parent_title"])
+            meta = ">".join(meta_parts)
+            block = EventBlock(
+                task_id=int(ev.get("task_id") or ev.get("taskId") or 0),
+                start=start,
+                end=end,
+                title=ev.get("title", ""),
+                meta=meta,
+                due=ev.get("due", ""),
+            )
+            self._events.append(block)
         self.update()
+
+    def _layout_columns(self, evs: List[EventBlock]):
+        items = sorted(evs, key=lambda e: (e.start, e.end))
+        active: List[EventBlock] = []
+        for ev in items:
+            active = [a for a in active if a.end > ev.start]
+            used = {getattr(a, '_col', -1) for a in active}
+            col = 0
+            while col in used:
+                col += 1
+            ev._col = col
+            active.append(ev)
+        max_col = 1 + max((getattr(e, '_col', 0) for e in items), default=0)
+        for e in items:
+            e._colcount = max_col
+        return items
+
+    def _rect_for_event(self, evb: EventBlock) -> QtCore.QRectF:
+        start_y = self._header_h + (evb.start.hour + evb.start.minute/60) * self._hour_h
+        end_y = self._header_h + (evb.end.hour + evb.end.minute/60) * self._hour_h
+        return QtCore.QRectF(
+            self._left_timebar + 4,
+            start_y + 2,
+            self.width() - self._left_timebar - 8,
+            max(18, end_y - start_y - 4),
+        )
 
     def _time_for_y(self, y: int) -> Tuple[int, int]:
         y2 = max(self._header_h, y) - self._header_h
@@ -61,7 +142,13 @@ class CalendarDayView(QtWidgets.QWidget):
         task_id = int(bytes(e.mimeData().data('application/x-task-id')).decode('utf-8'))
         pos = e.position().toPoint()
         hour, minute = self._time_for_y(pos.y())
-        start_dt = datetime(self._date.year(), self._date.month(), self._date.day(), hour, minute)
+        start_dt = datetime(
+            self._anchor_date.year(),
+            self._anchor_date.month(),
+            self._anchor_date.day(),
+            hour,
+            minute,
+        )
         end_dt = start_dt + timedelta(minutes=60)
         title = f"Task #{task_id}"
         if e.mimeData().hasFormat('application/x-task-title'):
@@ -183,9 +270,11 @@ class CalendarDayView(QtWidgets.QWidget):
         header = QtCore.QRect(0, 0, self.width(), self._header_h)
         p.fillRect(header, QtGui.QColor(COLOR_SECONDARY_BG))
         p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
-        p.drawText(header.adjusted(8, 0, -8, 0),
-                   QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft,
-                   self._date.toString("ddd dd MMM"))
+        p.drawText(
+            header.adjusted(8, 0, -8, 0),
+            QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft,
+            self._anchor_date.toString("ddd dd MMM"),
+        )
 
         for h in range(25):
             y = self._header_h + h * self._hour_h
@@ -197,45 +286,32 @@ class CalendarDayView(QtWidgets.QWidget):
         p.setPen(QtGui.QPen(QtGui.QColor('#3a3a3a')))
         p.drawLine(self._left_timebar, 0, self._left_timebar, self.height())
 
-        infos = []
+        events = self._layout_columns(self._events)
         self._event_rects.clear()
-        for idx, evb in enumerate(self._events):
-            start_y = self._header_h + int((evb.start.hour + evb.start.minute/60) * self._hour_h)
-            end_y   = self._header_h + int((evb.end.hour   + evb.end.minute/60)   * self._hour_h)
-            r = QtCore.QRect(self._left_timebar+4, start_y+2, self.width()-self._left_timebar-8, max(18, end_y-start_y-4))
-            self._event_rects[idx] = r
-            infos.append({"idx": idx, "rect": r, "height": r.height(), "is_small": False})
-
-        n = len(infos)
-        for i in range(n):
-            for j in range(i+1, n):
-                ri = infos[i]["rect"]; rj = infos[j]["rect"]
-                if ri.intersects(rj):
-                    if infos[i]["height"] < infos[j]["height"]:
-                        infos[i]["is_small"] = True
-                    elif infos[j]["height"] < infos[i]["height"]:
-                        infos[j]["is_small"] = True
-
-        draw_list = sorted(infos, key=lambda d: (d["is_small"], -d["height"]))
-        self._z_order = [d["idx"] for d in draw_list]
-
-        for item in draw_list:
-            r = item["rect"]
-            fill = QtGui.QColor(COLOR_ACCENT) if item["is_small"] else QtGui.QColor(COLOR_SECONDARY_BG)
-            p.fillRect(r, fill)
-            p.setPen(QtGui.QPen(QtGui.QColor("#5a5a5a")))
-            p.drawRect(r)
-            evb = self._events[item["idx"]]
+        self._z_order = []
+        for ev in events:
+            idx = self._events.index(ev)
+            base_r = self._rect_for_event(ev)
+            col_w = base_r.width() / max(1, ev._colcount)
+            r = QtCore.QRectF(base_r.x() + ev._col * col_w, base_r.y(), col_w - 3, base_r.height())
+            self._event_rects[idx] = QtCore.QRect(int(r.x()), int(r.y()), int(r.width()), int(r.height()))
+            self._z_order.append(idx)
+            fill = QtGui.QColor(21, 180, 185)
+            if (ev.end - ev.start).total_seconds() <= _SMALL_BLOCK_MIN * 60:
+                fill = QtGui.QColor(fill).lighter(120)
+            p.setPen(QtGui.QPen(QtGui.QColor(0, 0, 0, 60)))
+            p.setBrush(QtGui.QBrush(fill))
+            p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), _ROUNDED_RADIUS, _ROUNDED_RADIUS)
             fm = p.fontMetrics()
             text_x = r.x() + 6
             text_y = r.y() + fm.ascent() + 2
             p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-            p.drawText(text_x, text_y, evb.title)
-            if evb.meta:
+            p.drawText(text_x, text_y, ev.title)
+            if ev.meta:
                 text_y += fm.height()
                 p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
-                p.drawText(text_x, text_y, evb.meta)
-            if evb.due:
+                p.drawText(text_x, text_y, ev.meta)
+            if ev.due:
                 text_y += fm.height()
                 p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-                p.drawText(text_x, text_y, evb.due)
+                p.drawText(text_x, text_y, ev.due)

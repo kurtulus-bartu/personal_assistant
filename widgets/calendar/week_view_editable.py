@@ -4,7 +4,16 @@ from datetime import datetime, timedelta
 from typing import List, Tuple, Dict, Iterable, Any
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import QDate
-from theme.colors import COLOR_PRIMARY_BG, COLOR_SECONDARY_BG, COLOR_TEXT, COLOR_TEXT_MUTED, COLOR_ACCENT
+from theme.colors import (
+    COLOR_PRIMARY_BG,
+    COLOR_SECONDARY_BG,
+    COLOR_TEXT,
+    COLOR_TEXT_MUTED,
+    COLOR_ACCENT,
+)
+
+_ROUNDED_RADIUS = 8
+_SMALL_BLOCK_MIN = 45  # minutes
 
 @dataclass
 class EventBlock:
@@ -36,15 +45,16 @@ class CalendarWeekView(QtWidgets.QWidget):
         self._snap_minutes  = 15
         self._events: List[EventBlock] = []
         self._event_rects: Dict[int, QtCore.QRect] = {}
-        self._z_order: List[int] = []
-        self._drag_mode = None
-        self._active_index = -1
+        self._drag_index = -1
+        self._dragging = False
+        self._drag_start_dt: datetime | None = None
+        self._drag_block_snapshot: Tuple[datetime, datetime] | None = None
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
 
     # ---- public helpers ----
     def eventAtPos(self, pt: QtCore.QPoint) -> EventBlock | None:
-        idx = self._hit_test(pt)
+        idx = self._hit_test_block_index(pt)
         return self._events[idx] if idx != -1 else None
 
     def dateTimeRangeAtPos(self, pt: QtCore.QPoint, duration_minutes: int = 60) -> tuple[datetime, datetime]:
@@ -147,21 +157,19 @@ class CalendarWeekView(QtWidgets.QWidget):
         self.update()
         e.acceptProposedAction()
 
-    # --- mouse: move/resize & double-click ---
+    # --- mouse: move & double-click ---
     def mousePressEvent(self, e: QtGui.QMouseEvent):
-        if e.button() in (QtCore.Qt.MouseButton.RightButton, QtCore.Qt.MouseButton.LeftButton):
-            idx = self._hit_test(e.position().toPoint())
+        if e.button() == QtCore.Qt.MouseButton.LeftButton:
+            idx = self._hit_test_block_index(e.position().toPoint())
             if idx != -1:
-                self._active_index = idx
-                r = self._event_rects.get(idx)
-                if r and r.bottom()-6 <= e.position().y() <= r.bottom()+6:
-                    self._drag_mode = 'resize'
-                else:
-                    self._drag_mode = 'move'
-                self.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
+                self._drag_index = idx
+                self._dragging = True
+                b = self._events[self._drag_index]
+                self._drag_start_dt = b.start
+                self._drag_block_snapshot = (b.start, b.end)
+                self.update()
                 return
             else:
-                # Boş grid tıklandı → tıklanan saate göre slot isteği
                 try:
                     start_dt, end_dt = self.dateTimeRangeAtPos(e.position().toPoint())
                     payload = {'start': start_dt, 'end': end_dt}
@@ -170,15 +178,37 @@ class CalendarWeekView(QtWidgets.QWidget):
                     pass
         super().mousePressEvent(e)
 
-    def mouseReleaseEvent(self, e: QtGui.QMouseEvent):
-        if self._drag_mode is not None:
-            self._drag_mode = None
-            self._active_index = -1
-            self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
+    def mouseMoveEvent(self, e: QtGui.QMouseEvent):
+        if self._dragging and 0 <= self._drag_index < len(self._events):
+            b = self._events[self._drag_index]
+            hour, minute = self._time_for_y(e.position().toPoint().y())
+            day_idx = self._day_index_for_x(e.position().toPoint().x())
+            new_start = datetime(self._anchor_monday.addDays(day_idx).year(),
+                                 self._anchor_monday.addDays(day_idx).month(),
+                                 self._anchor_monday.addDays(day_idx).day(),
+                                 hour, minute)
+            dur = b.end - b.start
+            b.start = new_start
+            b.end = new_start + dur
+            try:
+                self.blockMoved.emit(b)
+            except Exception:
+                pass
             self.update()
+            return
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e: QtGui.QMouseEvent):
+        if self._dragging:
+            self._dragging = False
+            self._drag_index = -1
+            self._drag_block_snapshot = None
+            self.update()
+            return
+        super().mouseReleaseEvent(e)
 
     def mouseDoubleClickEvent(self, e: QtGui.QMouseEvent):
-        idx = self._hit_test(e.position().toPoint())
+        idx = self._hit_test_block_index(e.position().toPoint())
         if idx != -1:
             evb = self._events[idx]
             try:
@@ -187,42 +217,6 @@ class CalendarWeekView(QtWidgets.QWidget):
             except Exception:
                 pass
         super().mouseDoubleClickEvent(e)
-
-    def mouseMoveEvent(self, e: QtGui.QMouseEvent):
-        pos = e.position().toPoint()
-        idx = self._hit_test(pos)
-        if self._drag_mode is None:
-            if idx != -1:
-                r = self._event_rects.get(idx)
-                if r and r.bottom()-6 <= pos.y() <= r.bottom()+6:
-                    self.setCursor(QtCore.Qt.CursorShape.SizeVerCursor)
-                else:
-                    self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
-            else:
-                self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
-            return
-
-        evb = self._events[self._active_index]
-        if self._drag_mode == 'resize':
-            hour, minute = self._time_for_y(pos.y())
-            new_end = datetime(evb.end.year, evb.end.month, evb.end.day, hour, minute)
-            if new_end <= evb.start:
-                from datetime import timedelta
-                new_end = evb.start + timedelta(minutes=self._snap_minutes)
-            evb.end = new_end
-            self.blockResized.emit(evb)
-        elif self._drag_mode == 'move':
-            day_idx = self._day_index_for_x(pos.x())
-            date = self._anchor_monday.addDays(day_idx)
-            hour, minute = self._time_for_y(pos.y())
-            dur = int((evb.end - evb.start).total_seconds() // 60)
-            start_minutes = max(0, min(24*60 - self._snap_minutes, hour*60 + minute))
-            end_minutes   = start_minutes + dur
-            new_start = datetime(date.year(), date.month(), date.day(), start_minutes//60, start_minutes%60)
-            new_end   = datetime(date.year(), date.month(), date.day(), end_minutes//60, end_minutes%60)
-            evb.start, evb.end = new_start, new_end
-            self.blockMoved.emit(evb)
-        self.update()
 
     # ---------- helpers ----------
     def _date_for_x(self, x: int) -> QDate:
@@ -244,11 +238,58 @@ class CalendarWeekView(QtWidgets.QWidget):
         minute = minutes % 60
         return hour, minute
 
-    def _hit_test(self, pt: QtCore.QPoint) -> int:
-        for idx, r in self._event_rects.items():
+    def _duration_minutes(self, b: EventBlock) -> int:
+        return max(1, int((b.end - b.start).total_seconds() // 60))
+
+    def _rect_for_block(self, b: EventBlock) -> QtCore.QRectF:
+        day_idx = self._anchor_monday.daysTo(QDate(b.start.year, b.start.month, b.start.day))
+        if 0 <= day_idx <= 6:
+            col_width = (self.width() - self._left_timebar) / 7.0
+            x = self._left_timebar + day_idx * col_width + 2
+            start_y = self._header_height + (b.start.hour + b.start.minute / 60) * self._hour_height
+            end_y = self._header_height + (b.end.hour + b.end.minute / 60) * self._hour_height
+            return QtCore.QRectF(x + 2, start_y + 2, col_width - 6, max(18, end_y - start_y - 4))
+        return QtCore.QRectF()
+
+    def _hit_test_block_index(self, pt: QtCore.QPoint) -> int:
+        topmost = -1
+        for b in sorted(self._events, key=lambda x: self._duration_minutes(x), reverse=True):
+            r = self._rect_for_block(b)
             if r.contains(pt):
-                return idx
-        return -1
+                topmost = self._events.index(b)
+        return topmost
+
+    def _paint_blocks(self, p: QtGui.QPainter):
+        self._event_rects.clear()
+        for b in sorted(self._events, key=lambda x: self._duration_minutes(x), reverse=True):
+            r = self._rect_for_block(b)
+            if r.isNull():
+                continue
+            idx = self._events.index(b)
+            self._event_rects[idx] = QtCore.QRect(int(r.x()), int(r.y()), int(r.width()), int(r.height()))
+            dur = self._duration_minutes(b)
+            fill = QtGui.QColor(COLOR_ACCENT)
+            if dur <= _SMALL_BLOCK_MIN:
+                fill = QtGui.QColor(fill).lighter(120)
+            pen = QtGui.QPen(QtGui.QColor(0, 0, 0, 60))
+            p.setPen(pen)
+            p.setBrush(QtGui.QBrush(fill))
+            p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), _ROUNDED_RADIUS, _ROUNDED_RADIUS)
+            p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
+            p.drawText(
+                r.adjusted(6, 2, -6, 0),
+                QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
+                b.title,
+            )
+            meta = getattr(b, "meta", "")
+            if meta:
+                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
+                p.drawText(
+                    r.adjusted(6, 18, -6, 0),
+                    QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
+                    meta,
+                )
+                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
 
     # ---------- painting ----------
     def paintEvent(self, ev):
@@ -287,35 +328,4 @@ class CalendarWeekView(QtWidgets.QWidget):
         p.drawLine(self._left_timebar, 0, self._left_timebar, self.height())
 
         # event rect hesaplama + çizim
-        infos = []
-        self._event_rects.clear()
-        for idx, evb in enumerate(self._events):
-            day_idx = self._anchor_monday.daysTo(QDate(evb.start.year, evb.start.month, evb.start.day))
-            if 0 <= day_idx <= 6:
-                x = int(self._left_timebar + day_idx * col_width) + 2
-                start_y = self._header_height + int((evb.start.hour + evb.start.minute/60) * self._hour_height)
-                end_y   = self._header_height + int((evb.end.hour   + evb.end.minute/60)   * self._hour_height)
-                r = QtCore.QRect(x+2, start_y+2, int(col_width)-6, max(18, end_y-start_y-4))
-                self._event_rects[idx] = r
-                infos.append((idx, r))
-
-        for idx, r in infos:
-            p.fillRect(r, QtGui.QColor(COLOR_SECONDARY_BG))
-            p.setPen(QtGui.QPen(QtGui.QColor("#5a5a5a")))
-            p.drawRect(r)
-            p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
-            title = self._events[idx].title
-            p.drawText(
-                r.adjusted(6, 2, -6, 0),
-                QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
-                title,
-            )
-            meta = getattr(self._events[idx], "meta", "")
-            if meta:
-                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT_MUTED)))
-                p.drawText(
-                    r.adjusted(6, 18, -6, 0),
-                    QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
-                    meta,
-                )
-                p.setPen(QtGui.QPen(QtGui.QColor(COLOR_TEXT)))
+        self._paint_blocks(p)
