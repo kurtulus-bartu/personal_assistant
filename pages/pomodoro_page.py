@@ -1,7 +1,7 @@
 # pomodoro_page.py — Planner uyumlu Pomodoro (iki mod + not + görev seçici + ikon bar)
 
 from __future__ import annotations
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 from datetime import datetime, timedelta
 
 from PyQt6 import QtCore, QtGui, QtWidgets
@@ -53,6 +53,9 @@ class PomodoroPage(QtWidgets.QWidget):
         self._proj_ids: Dict[int, str] = {}
         self._sel_tag_id: int = 0
         self._sel_proj_id: int = 0
+        self._tasks_all: List[Dict[str, Any]] = []
+        self._tags_map: Dict[int, str] = {}
+        self._projects_map: Dict[int, str] = {}
 
         self._timer = QtCore.QTimer(self)
         self._timer.setInterval(1000)
@@ -65,37 +68,36 @@ class PomodoroPage(QtWidgets.QWidget):
 
     # ------------------------------ Public API ---------------------------------
 
-    def set_store(self, store: Any, fetcher_name_candidates: Tuple[str, ...] = ("list_open_tasks", "list_tasks", "fetch_tasks", "all_tasks")):
+    def set_store(self, store: Any):
+        """Planner ile aynı store'u bağla ve yan paneli tazele."""
         self._store = store
         self._task_fetcher = None
-        for name in fetcher_name_candidates:
-            if hasattr(store, name):
-                fn = getattr(store, name)
-                if callable(fn):
-                    def fetch():
-                        try:
-                            tasks = fn()
-                        except TypeError:
-                            tasks = fn(self)
-                        return self._normalize_tasks(tasks)
-                    self._task_fetcher = fetch
-                    break
-        self.reload_tasks()
+        self.reload_sidebar()
 
     def set_tasks(self, tasks: List[Dict[str, Any]]):
-        self._task_fetcher = lambda: self._normalize_tasks(tasks)
-        self.reload_tasks()
+        self._task_fetcher = lambda: tasks
+        self.reload_sidebar()
 
     def reload_tasks(self):
-        items = []
+        self.reload_sidebar()
+
+    def reload_sidebar(self):
+        tasks: List[Dict[str, Any]] = []
         if self._task_fetcher:
             try:
-                items = self._task_fetcher() or []
+                tasks = self._task_fetcher() or []
             except Exception:
-                items = []
-        # Sadece "In Progress"
-        items = [t for t in items if (t.get("status") or "").lower() in ("in progress","in_progress","progress","working","doing")]
-        self._tasks_all = items
+                tasks = []
+        else:
+            tasks = self._fetch_tasks_from_store()
+
+        tags, projects = self._fetch_tags_projects()
+        self._tags_map = {int(t.get("id")): t.get("name", "") for t in tags if t.get("id") is not None}
+        self._projects_map = {int(p.get("id")): p.get("name", "") for p in projects if p.get("id") is not None}
+
+        all_norm = self._normalize_tasks(tasks)
+        inprog = [t for t in all_norm if self._is_in_progress(t)]
+        self._tasks_all = inprog if inprog else all_norm
         self._fill_tag_project_filters()
 
     # ------------------------------ UI -----------------------------------------
@@ -258,14 +260,65 @@ class PomodoroPage(QtWidgets.QWidget):
 
     # ------------------------------ Tasks Sidebar -------------------------------
 
+    def _fetch_tasks_from_store(self) -> List[Dict[str, Any]]:
+        if not self._store:
+            return []
+        db = getattr(self._store, "db", None)
+        if db:
+            for fn_name in ("get_all_tasks", "get_tasks"):
+                if hasattr(db, fn_name):
+                    try:
+                        return getattr(db, fn_name)() or []
+                    except Exception:
+                        pass
+        for fn_name in ("list_open_tasks", "list_tasks", "fetch_tasks", "all_tasks", "get_tasks"):
+            if hasattr(self._store, fn_name):
+                try:
+                    return getattr(self._store, fn_name)() or []
+                except Exception:
+                    pass
+        return []
+
+    def _fetch_tags_projects(self) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        tags: List[Dict[str, Any]] = []
+        projects: List[Dict[str, Any]] = []
+        if not self._store:
+            return tags, projects
+        db = getattr(self._store, "db", None)
+        if db:
+            try:
+                tags = db.get_tags() or []
+            except Exception:
+                pass
+            try:
+                projects = db.get_projects() or []
+            except Exception:
+                pass
+        return tags, projects
+
+    def _is_in_progress(self, t: dict) -> bool:
+        s = (t.get("status") or "").strip().lower()
+        tokens = ("in progress", "in_progress", "progress", "working", "doing", "devam", "çalış", "aktif")
+        return any(tok in s for tok in tokens)
+
     def _normalize_tasks(self, tasks: Any) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
         for t in tasks or []:
             if isinstance(t, dict):
                 tid    = t.get("id") or t.get("task_id")
                 title  = t.get("title") or t.get("name") or f"Task {tid}"
-                tag    = t.get("tag") or t.get("tag_name") or ""
-                proj   = t.get("project") or t.get("project_name") or ""
+                tag_id = t.get("tag_id")
+                proj_id = t.get("project_id")
+                tag    = t.get("tag") or t.get("tag_name")
+                if tag is None and tag_id is not None:
+                    tag = self._tags_map.get(int(tag_id), "")
+                if tag is None:
+                    tag = ""
+                proj   = t.get("project") or t.get("project_name")
+                if proj is None and proj_id is not None:
+                    proj = self._projects_map.get(int(proj_id), "")
+                if proj is None:
+                    proj = ""
                 parent = t.get("parent") or t.get("parent_title") or ""
                 status = t.get("status") or t.get("state") or ""
             elif isinstance(t, (tuple, list)) and len(t) >= 2:

@@ -689,6 +689,11 @@ class PlannerPage(QtWidgets.QWidget):
         self._all_tasks = tasks or []
         self._update_project_buttons()
         self._filter_tasks_and_update()
+        if hasattr(self, "pomo"):
+            try:
+                self.pomo.reload_sidebar()
+            except Exception:
+                pass
 
     def _apply_events(self, events: list[dict]):
         self._all_events = events or []
