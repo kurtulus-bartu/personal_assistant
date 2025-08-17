@@ -6,7 +6,6 @@ from pages.planner_page import PlannerPage
 from pages.health_activity_page import HealthActivityPage
 from pages.performance_page import PerformancePage
 from pages.journal_page import JournalPage
-from pages.pomodoro_page import PomodoroPage
 
 from theme.colors import COLOR_PRIMARY_BG
 from utils.icons import make_app_icon_png
@@ -47,7 +46,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.page_health = HealthActivityPage()
         self.page_perf   = PerformancePage()
         self.page_journal= JournalPage()
-        self.page_pomo   = PomodoroPage()
+        self.page_pomo   = self.page_planner.pomo
 
         # Stack'e ekle
         self.pages = {}
