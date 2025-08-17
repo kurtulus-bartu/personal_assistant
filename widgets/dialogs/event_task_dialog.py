@@ -248,13 +248,13 @@ class EventTaskDialog(QtWidgets.QDialog):
 
         right_col.setStyleSheet(f"""
             QFrame#pomopane {{
-                background: {COLOR_SECONDARY_BG};
+                background: {COLOR_PRIMARY_BG};
                 border: 1px solid #3a3a3a;
                 border-radius: 14px;
                 color: {COLOR_TEXT};
             }}
             QListWidget, QTextEdit {{
-                background: {COLOR_PRIMARY_BG};
+                background: {COLOR_SECONDARY_BG};
                 border: 1px solid #3a3a3a;
                 border-radius: 10px;
                 color: {COLOR_TEXT};
