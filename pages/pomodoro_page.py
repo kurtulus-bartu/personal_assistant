@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from widgets.core.selectors import ProjectButtonRow
+
 # Planner renkleri
 try:
     from theme.colors import COLOR_PRIMARY_BG, COLOR_SECONDARY_BG, COLOR_TEXT, COLOR_TEXT_MUTED, COLOR_ACCENT
@@ -47,6 +49,10 @@ class PomodoroPage(QtWidgets.QWidget):
         self._tick_start_mono_ms: int = 0
         self._store: Any = None
         self._task_fetcher: Optional[Callable[[], List[Dict[str, Any]]]] = None
+        self._tag_ids: Dict[int, str] = {}
+        self._proj_ids: Dict[int, str] = {}
+        self._sel_tag_id: int = 0
+        self._sel_proj_id: int = 0
 
         self._timer = QtCore.QTimer(self)
         self._timer.setInterval(1000)
@@ -112,7 +118,7 @@ class PomodoroPage(QtWidgets.QWidget):
 
         # Sol: Not alanı
         left = QtWidgets.QFrame()
-        left.setObjectName("pane")
+        left.setObjectName("pane_primary")
         left.setMinimumWidth(260)
         l_lo = QtWidgets.QVBoxLayout(left); l_lo.setContentsMargins(12,12,12,12); l_lo.setSpacing(8)
         l_lo.addWidget(QtWidgets.QLabel("Notlar (bu pomodoro’ya kaydedilecek):"))
@@ -154,20 +160,16 @@ class PomodoroPage(QtWidgets.QWidget):
 
         # Sağ: In Progress görev seçici (TAG → PROJECT → TASK)
         right = QtWidgets.QFrame()
-        right.setObjectName("pane")
+        right.setObjectName("pane_primary")
         r_lo = QtWidgets.QVBoxLayout(right); r_lo.setContentsMargins(12,12,12,12); r_lo.setSpacing(8)
 
-        row_tag = QtWidgets.QHBoxLayout()
-        row_tag.addWidget(QtWidgets.QLabel("Tag:"))
-        self.cmb_tag = QtWidgets.QComboBox()
-        row_tag.addWidget(self.cmb_tag, 1)
-        r_lo.addLayout(row_tag)
+        r_lo.addWidget(QtWidgets.QLabel("Taglar:"))
+        self.tag_bar = ProjectButtonRow(item_height=28)
+        r_lo.addWidget(self.tag_bar)
 
-        row_proj = QtWidgets.QHBoxLayout()
-        row_proj.addWidget(QtWidgets.QLabel("Proje:"))
-        self.cmb_proj = QtWidgets.QComboBox()
-        row_proj.addWidget(self.cmb_proj, 1)
-        r_lo.addLayout(row_proj)
+        r_lo.addWidget(QtWidgets.QLabel("Projeler:"))
+        self.project_bar = ProjectButtonRow(item_height=28)
+        r_lo.addWidget(self.project_bar)
 
         r_lo.addWidget(QtWidgets.QLabel("Görevler:"))
         self.list_tasks = QtWidgets.QListWidget()
@@ -208,6 +210,11 @@ class PomodoroPage(QtWidgets.QWidget):
                 border: 1px solid #3a3a3a;
                 border-radius: 14px;
             }}
+            QFrame#pane_primary {{
+                background: {COLOR_PRIMARY_BG};
+                border: 1px solid #3a3a3a;
+                border-radius: 14px;
+            }}
             QLabel#time {{
                 font-size: 64px;
                 font-weight: 800;
@@ -222,8 +229,8 @@ class PomodoroPage(QtWidgets.QWidget):
                 color: {COLOR_TEXT};
                 selection-background-color: {COLOR_ACCENT};
             }}
-            QComboBox, QListWidget, QTextEdit {{
-                background: {COLOR_PRIMARY_BG};
+            QListWidget, QTextEdit {{
+                background: {COLOR_SECONDARY_BG};
                 border: 1px solid #3a3a3a;
                 border-radius: 10px;
                 color: {COLOR_TEXT};
@@ -245,8 +252,8 @@ class PomodoroPage(QtWidgets.QWidget):
 
         self.edit_time.editingFinished.connect(self._apply_edit_time)
 
-        self.cmb_tag.currentIndexChanged.connect(self._apply_filters)
-        self.cmb_proj.currentIndexChanged.connect(self._apply_filters)
+        self.tag_bar.changed.connect(self._on_tag_changed)
+        self.project_bar.changed.connect(self._on_proj_changed)
         self.list_tasks.itemSelectionChanged.connect(self._on_task_selected)
 
     # ------------------------------ Tasks Sidebar -------------------------------
@@ -273,30 +280,33 @@ class PomodoroPage(QtWidgets.QWidget):
 
     def _fill_tag_project_filters(self):
         tags = sorted({t["tag"] for t in self._tasks_all if t.get("tag")})
-        self.cmb_tag.blockSignals(True); self.cmb_tag.clear(); self.cmb_tag.addItem("Tümü", userData=None)
-        for tg in tags: self.cmb_tag.addItem(tg, userData=tg)
-        self.cmb_tag.blockSignals(False)
+        self._tag_ids = {i + 1: tg for i, tg in enumerate(tags)}
+        self.tag_bar.setItems([(i, tg) for i, tg in self._tag_ids.items()])
+        self._sel_tag_id = 0
+        self._on_tag_changed(0)
 
-        self._apply_filters()
-
-    def _apply_filters(self):
-        sel_tag = self.cmb_tag.currentData()
-        filtered = [t for t in self._tasks_all if (sel_tag is None or t.get("tag")==sel_tag)]
+    def _on_tag_changed(self, tag_id: int):
+        self._sel_tag_id = tag_id
+        sel_tag = self._tag_ids.get(tag_id)
+        filtered = [t for t in self._tasks_all if (sel_tag is None or t.get("tag") == sel_tag)]
 
         projs = sorted({t["project"] for t in filtered if t.get("project")})
-        self.cmb_proj.blockSignals(True); self.cmb_proj.clear(); self.cmb_proj.addItem("Tümü", userData=None)
-        for pr in projs: self.cmb_proj.addItem(pr, userData=pr)
-        self.cmb_proj.blockSignals(False)
+        self._proj_ids = {i + 1: pr for i, pr in enumerate(projs)}
+        self.project_bar.setItems([(i, pr) for i, pr in self._proj_ids.items()])
+        self._sel_proj_id = 0
+        self._fill_task_list(filtered)
 
+    def _on_proj_changed(self, proj_id: int):
+        self._sel_proj_id = proj_id
         self._fill_task_list()
 
-    def _fill_task_list(self):
-        sel_tag = self.cmb_tag.currentData()
-        sel_proj= self.cmb_proj.currentData()
+    def _fill_task_list(self, base: Optional[List[Dict[str, Any]]] = None):
+        sel_tag = self._tag_ids.get(self._sel_tag_id)
+        sel_proj = self._proj_ids.get(self._sel_proj_id)
 
-        items = [t for t in self._tasks_all
-                 if (sel_tag is None or t.get("tag")==sel_tag)
-                 and (sel_proj is None or t.get("project")==sel_proj)]
+        items = base if base is not None else [t for t in self._tasks_all
+                 if (sel_tag is None or t.get("tag") == sel_tag)
+                 and (sel_proj is None or t.get("project") == sel_proj)]
 
         self.list_tasks.clear()
         for t in items:
