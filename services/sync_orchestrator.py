@@ -3,6 +3,7 @@ from typing import Optional
 from PyQt6 import QtCore
 from services.local_db import LocalDB
 import services.supabase_api as api
+from datetime import datetime, timedelta
 
 class SyncOrchestrator(QtCore.QObject):
     tasksUpdated  = QtCore.pyqtSignal(list)
@@ -100,6 +101,30 @@ class SyncOrchestrator(QtCore.QObject):
             self.db.mark_task_has_time(int(ev["task_id"]), False)
         self.db.delete_event(event_id)
         self._emit_all_from_local()
+
+    # ---------- Pomodoro sessions ----------
+    def add_pomodoro_session(
+        self,
+        task_id: int | None,
+        planned_secs: int,
+        actual_secs: int,
+        note: str,
+    ):
+        if not task_id:
+            return
+        now = datetime.utcnow()
+        started = now - timedelta(seconds=int(actual_secs))
+        self.db.insert_pomodoro_session(
+            task_id=int(task_id),
+            started_at_iso=started.isoformat(timespec="seconds"),
+            ended_at_iso=now.isoformat(timespec="seconds"),
+            planned_secs=int(planned_secs),
+            actual_secs=int(actual_secs),
+            note=note or "",
+        )
+
+    def get_pomodoro_sessions(self, task_id: int) -> list[dict]:
+        return self.db.list_pomodoro_sessions_for_task(int(task_id))
 
     # ---------- helpers ----------
     def _emit_all_from_local(self):

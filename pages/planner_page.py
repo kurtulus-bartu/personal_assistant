@@ -6,6 +6,7 @@ from widgets.calendar.day_view import CalendarDayView
 from kanban.board_lanes import KanbanBoard
 from theme.colors import COLOR_PRIMARY_BG, COLOR_SECONDARY_BG
 from services.sync_orchestrator import SyncOrchestrator
+from pages.pomodoro_page import PomodoroPage
 
 # Diyalog (tek ekran – task/event)
 try:
@@ -40,6 +41,15 @@ class PlannerPage(QtWidgets.QWidget):
         self._view_mode = "weekly"
         self._build_ui()
         self._wire_sync()
+        # Pomodoro page integration
+        self.pomo = PomodoroPage()
+        self.pomo.set_store(self.store)
+        self.pomo.completed.connect(self._on_pomo_completed)
+        self.store.tasksUpdated.connect(self.pomo.set_tasks)
+        try:
+            self.pomo.set_tasks(self.store.db.get_tasks())
+        except Exception:
+            pass
 
     # ---------------- UI ----------------
     def _build_ui(self):
@@ -224,8 +234,10 @@ class PlannerPage(QtWidgets.QWidget):
         else:
             m.start = None;  m.end = None
         dlg = EventTaskDialog(m, self)
+        dlg.store = self.store
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
+        self.eventDialog = dlg
         dlg.exec()
 
     def _open_task_dialog_by_id(self, task_id: int):
@@ -244,8 +256,10 @@ class PlannerPage(QtWidgets.QWidget):
         m.date = self._anchor_date
         m.start = None; m.end = None
         dlg = EventTaskDialog(m, self)
+        dlg.store = self.store
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
+        self.eventDialog = dlg
         dlg.exec()
 
     def _open_event_dialog_from_block(self, evb: EventBlock):
@@ -259,8 +273,10 @@ class PlannerPage(QtWidgets.QWidget):
         m.task_id = getattr(evb, "task_id", None)
         m.rrule   = getattr(evb, "rrule", None)
         dlg = EventTaskDialog(m, self)
+        dlg.store = self.store
         dlg.saved.connect(self._on_dialog_saved)
         dlg.deleted.connect(self._on_dialog_deleted)
+        self.eventDialog = dlg
         dlg.exec()
 
     def _on_dialog_saved(self, model):
@@ -323,6 +339,23 @@ class PlannerPage(QtWidgets.QWidget):
                 pass
         if hasattr(self.left, "applyServerTags"): self.left.applyServerTags(items)
         elif hasattr(self.left, "applyTags"):     self.left.applyTags(items)
+
+    def _on_pomo_completed(self, task_id, actual_secs, plan_secs, note):
+        if task_id:
+            try:
+                pass
+            except Exception:
+                pass
+        try:
+            if (
+                hasattr(self, "eventDialog")
+                and self.eventDialog
+                and self.eventDialog.isVisible()
+            ):
+                if getattr(self.eventDialog.model, "id", None) == task_id:
+                    self.eventDialog._load_pomodoro_history(task_id)
+        except Exception:
+            pass
 
     # ---------------- Sol panel slotları ----------------
     def on_view_changed(self, mode: str):
