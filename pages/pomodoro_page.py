@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from widgets.core.selectors import ProjectButtonRow
+from widgets.layout.navigator import NavIconButton
+from utils.icons import make_icon_pm_pair
 
 # Planner renkleri
 try:
@@ -106,12 +108,30 @@ class PomodoroPage(QtWidgets.QWidget):
         self.setObjectName("PomodoroPage")
         root = QtWidgets.QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)  # Planner başlık hizasıyla aynı
-        root.setSpacing(12)
+        root.setSpacing(8)
 
-        # Title
+        # ---- HEADER ----
+        header_w = QtWidgets.QWidget()
+        header = QtWidgets.QHBoxLayout(header_w)
+        header.setContentsMargins(12, 12, 12, 8)
+        header.setSpacing(8)
         self.lbl_title = QtWidgets.QLabel("Pomodoro")
         self.lbl_title.setObjectName("title")
-        root.addWidget(self.lbl_title, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
+        font = self.lbl_title.font()
+        font.setPointSize(20)
+        font.setWeight(600)
+        self.lbl_title.setFont(font)
+        header.addWidget(self.lbl_title)
+        header.addStretch(1)
+        pm_n, pm_a = make_icon_pm_pair(
+            self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_BrowserReload),
+            size=24,
+            normal_color=COLOR_TEXT_MUTED,
+            active_color=COLOR_ACCENT,
+        )
+        self.btn_refresh = NavIconButton(pm_n, pm_a, row_width=40, box_w=32, box_h=32, tooltip="Refresh")
+        header.addWidget(self.btn_refresh)
+        root.addWidget(header_w)
 
         # Orta üçlü: Sol Not — Orta Sayaç — Sağ Görev Paneli
         tri = QtWidgets.QHBoxLayout()
@@ -166,15 +186,29 @@ class PomodoroPage(QtWidgets.QWidget):
         r_lo = QtWidgets.QVBoxLayout(right); r_lo.setContentsMargins(12,12,12,12); r_lo.setSpacing(8)
 
         r_lo.addWidget(QtWidgets.QLabel("Taglar:"))
-        self.tag_bar = ProjectButtonRow(item_height=28)
+        self.tag_bar = ProjectButtonRow()
         r_lo.addWidget(self.tag_bar)
 
         r_lo.addWidget(QtWidgets.QLabel("Projeler:"))
-        self.project_bar = ProjectButtonRow(item_height=28)
+        self.project_bar = ProjectButtonRow()
         r_lo.addWidget(self.project_bar)
 
         r_lo.addWidget(QtWidgets.QLabel("Görevler:"))
-        self.list_tasks = QtWidgets.QListWidget()
+        class TaskListWidget(QtWidgets.QListWidget):
+            def resizeEvent(self, e: QtGui.QResizeEvent):
+                super().resizeEvent(e)
+                w = self.viewport().width() - 12
+                for i in range(self.count()):
+                    it = self.item(i)
+                    sz = it.sizeHint()
+                    if sz.width() != w:
+                        it.setSizeHint(QtCore.QSize(w, sz.height()))
+
+        self.list_tasks = TaskListWidget()
+        self.list_tasks.setViewMode(QtWidgets.QListWidget.ViewMode.ListMode)
+        self.list_tasks.setFlow(QtWidgets.QListView.Flow.TopToBottom)
+        self.list_tasks.setUniformItemSizes(True)
+        self.list_tasks.setSpacing(6)
         self.list_tasks.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         r_lo.addWidget(self.list_tasks, 1)
 
@@ -214,7 +248,7 @@ class PomodoroPage(QtWidgets.QWidget):
             }}
             QFrame#pane_primary {{
                 background: {COLOR_PRIMARY_BG};
-                border: 1px solid #3a3a3a;
+                border: none;
                 border-radius: 14px;
             }}
             QLabel#time {{
@@ -231,7 +265,13 @@ class PomodoroPage(QtWidgets.QWidget):
                 color: {COLOR_TEXT};
                 selection-background-color: {COLOR_ACCENT};
             }}
-            QListWidget, QTextEdit {{
+            QListWidget {{
+                background: {COLOR_SECONDARY_BG};
+                border: none;
+                border-radius: 8px;
+                color: {COLOR_TEXT};
+            }}
+            QTextEdit {{
                 background: {COLOR_SECONDARY_BG};
                 border: 1px solid #3a3a3a;
                 border-radius: 10px;
@@ -247,6 +287,7 @@ class PomodoroPage(QtWidgets.QWidget):
         """)
 
     def _wire(self):
+        self.btn_refresh.clicked.connect(self.reload_sidebar)
         self.btn_start.clicked.connect(self._start)
         self.btn_pause.clicked.connect(self._pause)
         self.btn_reset.clicked.connect(self._reset)
@@ -363,12 +404,40 @@ class PomodoroPage(QtWidgets.QWidget):
 
         self.list_tasks.clear()
         for t in items:
-            txt = t["title"] if not t.get("meta") else f'{t["title"]} ({t["meta"]})'
-            it = QtWidgets.QListWidgetItem(txt)
-            it.setData(QtCore.Qt.ItemDataRole.UserRole, t["id"])
-            self.list_tasks.addItem(it)
+            self._add_task_item(t["id"], t["title"], t.get("meta"))
 
         # önceki seçimi muhafaza etmek istersen burada arayabilirsin.
+
+    def _add_task_item(self, task_id: int, title: str, meta: Optional[str] = None):
+        plain = title or f"Task #{task_id}"
+        if meta:
+            left_html = f"{plain} <span style='color:{COLOR_TEXT_MUTED};'>({meta})</span>"
+        else:
+            left_html = plain
+
+        it = QtWidgets.QListWidgetItem()
+        it.setData(QtCore.Qt.ItemDataRole.UserRole, task_id)
+        it.setFlags(it.flags() | QtCore.Qt.ItemFlag.ItemIsSelectable | QtCore.Qt.ItemFlag.ItemIsEnabled)
+
+        w = QtWidgets.QWidget()
+        row = QtWidgets.QHBoxLayout(w)
+        row.setContentsMargins(8, 6, 8, 6)
+        row.setSpacing(8)
+
+        lbl_left = QtWidgets.QLabel()
+        lbl_left.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        lbl_left.setWordWrap(True)
+        lbl_left.setText(left_html)
+
+        lbl_right = QtWidgets.QLabel("")
+        lbl_right.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+        row.addWidget(lbl_left, 1)
+        row.addWidget(lbl_right, 1)
+
+        self.list_tasks.addItem(it)
+        self.list_tasks.setItemWidget(it, w)
+        it.setSizeHint(QtCore.QSize(self.list_tasks.viewport().width() - 12, max(40, w.sizeHint().height())))
 
     def _on_task_selected(self):
         it = self.list_tasks.currentItem()
