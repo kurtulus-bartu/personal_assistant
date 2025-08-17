@@ -13,6 +13,7 @@ class LocalDB:
         self._conn = sqlite3.connect(self.path)
         self._conn.row_factory = sqlite3.Row
         self._ensure_schema()
+        self.migrate_add_pomodoro_sessions()
 
     # ---------------- Schema ----------------
     def _ensure_schema(self):
@@ -69,6 +70,23 @@ class LocalDB:
             payload TEXT NOT NULL,
             created_at TEXT DEFAULT (datetime('now'))
         )""")
+        self._conn.commit()
+
+    def migrate_add_pomodoro_sessions(self):
+        cur = self._conn.cursor()
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS pomodoro_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            started_at TEXT NOT NULL,
+            ended_at   TEXT NOT NULL,
+            planned_secs INTEGER NOT NULL,
+            actual_secs  INTEGER NOT NULL,
+            note TEXT DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+        """)
         self._conn.commit()
 
     # ---------------- Queue helpers ----------------
@@ -354,3 +372,44 @@ class LocalDB:
         )
         self._enqueue("tasks", "upsert", {"id": int(task_id), "project_id": project_id})
         self._conn.commit()
+
+    def insert_pomodoro_session(self, task_id: int, started_at_iso: str, ended_at_iso: str,
+                                planned_secs: int, actual_secs: int, note: str) -> int:
+        cur = self._conn.cursor()
+        cur.execute(
+            """
+        INSERT INTO pomodoro_sessions (task_id, started_at, ended_at, planned_secs, actual_secs, note)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            (task_id, started_at_iso, ended_at_iso, planned_secs, actual_secs, note),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def list_pomodoro_sessions_for_task(self, task_id: int) -> list[dict]:
+        cur = self._conn.cursor()
+        cur.execute(
+            """
+        SELECT id, task_id, started_at, ended_at, planned_secs, actual_secs, note, created_at
+        FROM pomodoro_sessions
+        WHERE task_id = ?
+        ORDER BY datetime(ended_at) DESC
+        """,
+            (task_id,),
+        )
+        rows = cur.fetchall()
+        out = []
+        for r in rows:
+            out.append(
+                {
+                    "id": r[0],
+                    "task_id": r[1],
+                    "started_at": r[2],
+                    "ended_at": r[3],
+                    "planned_secs": r[4],
+                    "actual_secs": r[5],
+                    "note": r[6],
+                    "created_at": r[7],
+                }
+            )
+        return out

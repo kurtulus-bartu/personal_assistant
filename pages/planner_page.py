@@ -17,6 +17,7 @@ from theme.colors import (
 )
 from services.sync_orchestrator import SyncOrchestrator
 from widgets.core.selectors import ProjectButtonRow
+from pages.pomodoro_page import PomodoroPage
 
 # Diyalog (tek ekran – task/event)
 try:
@@ -293,6 +294,11 @@ class PlannerPage(QtWidgets.QWidget):
         if hasattr(self.left_panel_widget, "attachStore"):
             self.left_panel_widget.attachStore(self.store)
         self.store.bootstrap()
+
+        self.pomo = PomodoroPage()
+        self.pomo.set_store(self.store)
+        self.pomo.completed.connect(self._on_pomo_completed)
+
         if hasattr(self.kanban, "statusChanged"):
             self.kanban.statusChanged.connect(self.store.set_task_status)
         if hasattr(self.kanban, "taskReparented"):
@@ -300,6 +306,23 @@ class PlannerPage(QtWidgets.QWidget):
 
     def _on_refresh_clicked(self):
         self.store.refresh()
+
+    def _on_pomo_completed(self, task_id, actual_secs, plan_secs, note):
+        # DB ekleme zaten PomodoroPage içinde store.add_pomodoro_session ile deneniyor.
+        # Burada istersen küçük bir “task activity” etiketi veya status güncellemesi yap.
+        if task_id:
+            try:
+                # Örn: toplam odak süresi alanın varsa burada artırabilirsin
+                pass
+            except Exception:
+                pass
+        # UI refresh: bir yerde açık diyalog varsa yenile
+        try:
+            if hasattr(self, "eventDialog") and self.eventDialog and self.eventDialog.isVisible():
+                if getattr(self.eventDialog._model, "id", None) == task_id:
+                    self.eventDialog._load_pomodoro_history(task_id)
+        except Exception:
+            pass
 
     def _on_add_project_clicked(self):
         # Tag seçili değilse proje eklenemez

@@ -3,6 +3,13 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Tuple
 from PyQt6 import QtCore, QtWidgets
 from datetime import datetime, time, timezone
+
+try:
+    from theme.colors import COLOR_PRIMARY_BG, COLOR_SECONDARY_BG, COLOR_TEXT
+except Exception:
+    COLOR_PRIMARY_BG = "#212121"
+    COLOR_SECONDARY_BG = "#2d2d2d"
+    COLOR_TEXT = "#EEEEEE"
 try:
     from dateutil.rrule import rrulestr
 except Exception:
@@ -200,6 +207,7 @@ class EventTaskDialog(QtWidgets.QDialog):
         self._tag_options = tag_options or []
         # project_options: (project_id, name, tag_id or None)
         self._project_options: List[Tuple[int, str, int | None]] = project_options or []
+        self.store = getattr(parent, "store", None)
         self.setMinimumWidth(480)
 
         main = QtWidgets.QVBoxLayout(self)
@@ -215,7 +223,43 @@ class EventTaskDialog(QtWidgets.QDialog):
         right = QtWidgets.QVBoxLayout(right_w); right.setSpacing(10)
         body.addWidget(left_w, 1)
         body.addWidget(right_w, 1)
-        body.setStretch(0, 1); body.setStretch(1, 1)
+
+        # --- Right column: Pomodoro geçmişi ---
+        right_col = QtWidgets.QFrame()
+        right_col.setObjectName("pomopane")
+        rlo = QtWidgets.QVBoxLayout(right_col); rlo.setContentsMargins(12,12,12,12); rlo.setSpacing(8)
+
+        lbl_hist = QtWidgets.QLabel("Pomodorolar")
+        lbl_hist.setStyleSheet("font-weight:600;")
+        rlo.addWidget(lbl_hist)
+
+        self.list_pomo = QtWidgets.QListWidget()
+        self.list_pomo.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        rlo.addWidget(self.list_pomo, 1)
+
+        lbl_note = QtWidgets.QLabel("Seçili pomodoro notu")
+        rlo.addWidget(lbl_note)
+        self.view_pomo_note = QtWidgets.QTextEdit()
+        self.view_pomo_note.setReadOnly(True)
+        rlo.addWidget(self.view_pomo_note, 1)
+
+        body.addWidget(right_col, 1)
+        body.setStretch(0, 1); body.setStretch(1, 1); body.setStretch(2, 1)
+
+        right_col.setStyleSheet(f"""
+            QFrame#pomopane {{
+                background: {COLOR_SECONDARY_BG};
+                border: 1px solid #3a3a3a;
+                border-radius: 14px;
+                color: {COLOR_TEXT};
+            }}
+            QListWidget, QTextEdit {{
+                background: {COLOR_PRIMARY_BG};
+                border: 1px solid #3a3a3a;
+                border-radius: 10px;
+                color: {COLOR_TEXT};
+            }}
+        """)
 
         # Title
         self.edt_title = QtWidgets.QLineEdit()
@@ -302,6 +346,7 @@ class EventTaskDialog(QtWidgets.QDialog):
         self.cancelBtn.clicked.connect(self.reject)
         self.saveBtn.clicked.connect(self._on_save)
         self.recur.postponeBtn.clicked.connect(self._postpone_to_next)
+        self.list_pomo.itemSelectionChanged.connect(self._on_pomo_selected)
 
         self._load_model(model)
 
@@ -324,6 +369,35 @@ class EventTaskDialog(QtWidgets.QDialog):
         tid = item.data(QtCore.Qt.ItemDataRole.UserRole)
         if tid:
             self.openTaskRequested.emit(int(tid))
+
+    def _load_pomodoro_history(self, task_id: int):
+        self.list_pomo.clear()
+        try:
+            sessions = self.store.get_pomodoro_sessions(task_id)
+        except Exception:
+            sessions = []
+
+        for s in sessions:
+            try:
+                ended = datetime.fromisoformat(s["ended_at"])
+            except Exception:
+                ended = None
+            dur_m = int(max(1, s["actual_secs"])) // 60
+            plan_m = int(max(1, s["planned_secs"])) // 60
+            title = f"{ended.strftime('%d %b %H:%M') if ended else s['ended_at']} — {dur_m}m (plan:{plan_m}m)"
+            it = QtWidgets.QListWidgetItem(title)
+            it.setData(QtCore.Qt.ItemDataRole.UserRole, s)
+            self.list_pomo.addItem(it)
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if getattr(self, "_model", None) and getattr(self._model, "id", None):
+            self._load_pomodoro_history(self._model.id)
+
+    def _on_pomo_selected(self):
+        it = self.list_pomo.currentItem()
+        s = it.data(QtCore.Qt.ItemDataRole.UserRole) if it else None
+        self.view_pomo_note.setPlainText((s or {}).get("note", ""))
 
     def _on_rrule_changed(self, r):
         self._model.rrule = r
