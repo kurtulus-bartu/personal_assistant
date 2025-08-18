@@ -38,6 +38,7 @@ class PomodoroPage(QtWidgets.QWidget):
     paused    = QtCore.pyqtSignal(object, int)
     reset     = QtCore.pyqtSignal(object)
     completed = QtCore.pyqtSignal(object, int, int, str)
+    taskActivated = QtCore.pyqtSignal(int)
 
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
         super().__init__(parent)
@@ -143,7 +144,9 @@ class PomodoroPage(QtWidgets.QWidget):
         left.setObjectName("pane_primary")
         left.setMinimumWidth(260)
         l_lo = QtWidgets.QVBoxLayout(left); l_lo.setContentsMargins(12,12,12,12); l_lo.setSpacing(8)
-        l_lo.addWidget(QtWidgets.QLabel("Notlar (bu pomodoro’ya kaydedilecek):"))
+        lbl_notes = QtWidgets.QLabel("Notlar")
+        lbl_notes.setStyleSheet(f"color:{COLOR_TEXT_MUTED};")
+        l_lo.addWidget(lbl_notes)
         self.txt_notes = QtWidgets.QTextEdit()
         self.txt_notes.setPlaceholderText("Pomodoro notlarını buraya yaz…")
         l_lo.addWidget(self.txt_notes, 1)
@@ -185,15 +188,21 @@ class PomodoroPage(QtWidgets.QWidget):
         right.setObjectName("pane_primary")
         r_lo = QtWidgets.QVBoxLayout(right); r_lo.setContentsMargins(12,12,12,12); r_lo.setSpacing(8)
 
-        r_lo.addWidget(QtWidgets.QLabel("Taglar:"))
+        lbl_tags = QtWidgets.QLabel("Taglar")
+        lbl_tags.setStyleSheet(f"color:{COLOR_TEXT_MUTED};")
+        r_lo.addWidget(lbl_tags)
         self.tag_bar = ProjectButtonRow()
         r_lo.addWidget(self.tag_bar)
 
-        r_lo.addWidget(QtWidgets.QLabel("Projeler:"))
+        lbl_proj = QtWidgets.QLabel("Projeler")
+        lbl_proj.setStyleSheet(f"color:{COLOR_TEXT_MUTED};")
+        r_lo.addWidget(lbl_proj)
         self.project_bar = ProjectButtonRow()
         r_lo.addWidget(self.project_bar)
 
-        r_lo.addWidget(QtWidgets.QLabel("Görevler:"))
+        lbl_tasks = QtWidgets.QLabel("Görevler")
+        lbl_tasks.setStyleSheet(f"color:{COLOR_TEXT_MUTED};")
+        r_lo.addWidget(lbl_tasks)
         class TaskListWidget(QtWidgets.QListWidget):
             def resizeEvent(self, e: QtGui.QResizeEvent):
                 super().resizeEvent(e)
@@ -239,7 +248,6 @@ class PomodoroPage(QtWidgets.QWidget):
             QLabel#title {{
                 font-size: 20px;
                 font-weight: 600;
-                padding-left: 2px;  /* Planner başlık hizası */
             }}
             QFrame#pane {{
                 background: {COLOR_SECONDARY_BG};
@@ -298,6 +306,7 @@ class PomodoroPage(QtWidgets.QWidget):
         self.tag_bar.changed.connect(self._on_tag_changed)
         self.project_bar.changed.connect(self._on_proj_changed)
         self.list_tasks.itemSelectionChanged.connect(self._on_task_selected)
+        self.list_tasks.itemDoubleClicked.connect(self._emit_task_activated)
 
     # ------------------------------ Tasks Sidebar -------------------------------
 
@@ -362,14 +371,15 @@ class PomodoroPage(QtWidgets.QWidget):
                     proj = ""
                 parent = t.get("parent") or t.get("parent_title") or ""
                 status = t.get("status") or t.get("state") or ""
+                due = t.get("due") or t.get("due_date") or ""
             elif isinstance(t, (tuple, list)) and len(t) >= 2:
                 tid, title = t[0], t[1]
-                tag = proj = parent = status = ""
+                tag = proj = parent = status = due = ""
             else:
                 continue
             meta_parts = [p for p in (tag, proj, parent) if p]
             meta = ">".join(meta_parts) if meta_parts else ""
-            out.append({"id": tid, "title": title, "tag": tag, "project": proj, "parent": parent, "meta": meta, "status": status})
+            out.append({"id": tid, "title": title, "tag": tag, "project": proj, "parent": parent, "meta": meta, "status": status, "due": due})
         return out
 
     def _fill_tag_project_filters(self):
@@ -404,11 +414,11 @@ class PomodoroPage(QtWidgets.QWidget):
 
         self.list_tasks.clear()
         for t in items:
-            self._add_task_item(t["id"], t["title"], t.get("meta"))
+            self._add_task_item(t["id"], t["title"], t.get("meta"), t.get("due"))
 
         # önceki seçimi muhafaza etmek istersen burada arayabilirsin.
 
-    def _add_task_item(self, task_id: int, title: str, meta: Optional[str] = None):
+    def _add_task_item(self, task_id: int, title: str, meta: Optional[str] = None, due: Optional[str] = None):
         plain = title or f"Task #{task_id}"
         if meta:
             left_html = f"{plain} <span style='color:{COLOR_TEXT_MUTED};'>({meta})</span>"
@@ -429,7 +439,13 @@ class PomodoroPage(QtWidgets.QWidget):
         lbl_left.setWordWrap(True)
         lbl_left.setText(left_html)
 
-        lbl_right = QtWidgets.QLabel("")
+        due_disp = ""
+        if due:
+            try:
+                due_disp = datetime.fromisoformat(str(due).replace("Z", "+00:00")).date().isoformat()
+            except Exception:
+                due_disp = str(due).split(" ")[0]
+        lbl_right = QtWidgets.QLabel(due_disp)
         lbl_right.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
 
         row.addWidget(lbl_left, 1)
@@ -442,6 +458,13 @@ class PomodoroPage(QtWidgets.QWidget):
     def _on_task_selected(self):
         it = self.list_tasks.currentItem()
         self._current_task_id = it.data(QtCore.Qt.ItemDataRole.UserRole) if it else None
+
+    def _emit_task_activated(self, item: QtWidgets.QListWidgetItem):
+        try:
+            task_id = int(item.data(QtCore.Qt.ItemDataRole.UserRole))
+            self.taskActivated.emit(task_id)
+        except Exception:
+            pass
 
     # ------------------------------ Timer Logic ---------------------------------
 
@@ -482,13 +505,15 @@ class PomodoroPage(QtWidgets.QWidget):
     def _start(self):
         if self._running:
             return
-        # süreyi editörden güncelle
-        self._apply_edit_time()
+        # sadece ilk başlatmada editördeki süreyi uygula
+        if self._elapsed_before_pause == 0:
+            self._apply_edit_time()
         self._running = True
         self._tick_start_mono_ms = QtCore.QTime.currentTime().msecsSinceStartOfDay()
         self._timer.start()
         self.stack_timer.setCurrentIndex(1)  # Running görünüme geç
-        self.started.emit(self._current_task_id, self._plan_secs)
+        if self._elapsed_before_pause == 0:
+            self.started.emit(self._current_task_id, self._plan_secs)
 
     def _pause(self):
         if not self._running:
@@ -497,6 +522,7 @@ class PomodoroPage(QtWidgets.QWidget):
         self._running = False
         self._elapsed_before_pause = self._elapsed_total()
         self.stack_timer.setCurrentIndex(0)  # Pre-start görünümüne dön (süre editlenebilir)
+        self._sync_labels()
         self.paused.emit(self._current_task_id, self._elapsed_before_pause)
 
     def _reset(self):

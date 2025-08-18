@@ -298,6 +298,8 @@ class PlannerPage(QtWidgets.QWidget):
         self.pomo = PomodoroPage()
         self.pomo.set_store(self.store)
         self.pomo.completed.connect(self._on_pomo_completed)
+        if hasattr(self.pomo, "taskActivated"):
+            self.pomo.taskActivated.connect(self._open_task_dialog_by_id)
 
         if hasattr(self.kanban, "statusChanged"):
             self.kanban.statusChanged.connect(self.store.set_task_status)
