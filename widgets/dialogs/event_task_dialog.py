@@ -383,11 +383,25 @@ class EventTaskDialog(QtWidgets.QDialog):
             except Exception:
                 ended = None
             dur_m = int(max(1, s["actual_secs"])) // 60
-            plan_m = int(max(1, s["planned_secs"])) // 60
-            title = f"{ended.strftime('%d %b %H:%M') if ended else s['ended_at']} — {dur_m}m (plan:{plan_m}m)"
-            it = QtWidgets.QListWidgetItem(title)
+            left = ended.strftime('%Y-%m-%d %H:%M') if ended else s['ended_at']
+            it = QtWidgets.QListWidgetItem()
             it.setData(QtCore.Qt.ItemDataRole.UserRole, s)
+
+            w = QtWidgets.QWidget()
+            row = QtWidgets.QHBoxLayout(w)
+            row.setContentsMargins(8, 6, 8, 6)
+            row.setSpacing(8)
+
+            lbl_left = QtWidgets.QLabel(left)
+            lbl_right = QtWidgets.QLabel(f"{dur_m}m")
+            lbl_right.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+            row.addWidget(lbl_left, 1)
+            row.addWidget(lbl_right, 1)
+
             self.list_pomo.addItem(it)
+            self.list_pomo.setItemWidget(it, w)
+            it.setSizeHint(QtCore.QSize(self.list_pomo.viewport().width() - 12, max(40, w.sizeHint().height())))
 
     def showEvent(self, ev):
         super().showEvent(ev)
