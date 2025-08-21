@@ -59,6 +59,7 @@ class PomodoroPage(QtWidgets.QWidget):
         self._tasks_all: List[Dict[str, Any]] = []
         self._tags_map: Dict[int, str] = {}
         self._projects_map: Dict[int, str] = {}
+        self._selected_history_session: Optional[Dict[str, Any]] = None
 
         self._timer = QtCore.QTimer(self)
         self._timer.setInterval(1000)
@@ -120,20 +121,60 @@ class PomodoroPage(QtWidgets.QWidget):
             except Exception:
                 ended = None
             dur_m = int(max(1, s.get("actual_secs", 0))) // 60
-            left = ended.strftime('%Y-%m-%d %H:%M') if ended else s.get('ended_at', '')
+            date_str = ended.strftime('%Y-%m-%d %H:%M') if ended else s.get('ended_at', '')
+            task_name = ""
+            try:
+                if self._store and hasattr(self._store, "get_task_by_id") and s.get("task_id"):
+                    t = self._store.get_task_by_id(int(s["task_id"])) or {}
+                    task_name = t.get("title") or t.get("name") or ""
+            except Exception:
+                task_name = ""
+            left_html = f"{task_name} <span style='color:{COLOR_TEXT_MUTED};'>({date_str})</span>"
             it = QtWidgets.QListWidgetItem()
+            it.setData(QtCore.Qt.ItemDataRole.UserRole, s)
             w = QtWidgets.QWidget()
             row = QtWidgets.QHBoxLayout(w)
             row.setContentsMargins(8, 6, 8, 6)
             row.setSpacing(8)
-            lbl_left = QtWidgets.QLabel(left)
+            lbl_left = QtWidgets.QLabel(left_html)
+            lbl_left.setTextFormat(QtCore.Qt.TextFormat.RichText)
+            lbl_left.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred)
             lbl_right = QtWidgets.QLabel(f"{dur_m}m")
             lbl_right.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+            lbl_right.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Preferred)
+            lbl_right.setFixedWidth(40)
             row.addWidget(lbl_left, 1)
-            row.addWidget(lbl_right, 1)
+            row.addWidget(lbl_right)
             self.list_history.addItem(it)
             self.list_history.setItemWidget(it, w)
             it.setSizeHint(QtCore.QSize(self.list_history.viewport().width() - 12, max(40, w.sizeHint().height())))
+
+    def _on_history_selected(self):
+        it = self.list_history.currentItem()
+        s = it.data(QtCore.Qt.ItemDataRole.UserRole) if it else None
+        self._selected_history_session = s
+        if s:
+            self.txt_notes.setPlainText(s.get("note", ""))
+            self.btn_save_note.setEnabled(False)
+        else:
+            self.btn_save_note.setEnabled(False)
+
+    def _save_history_note(self):
+        s = self._selected_history_session
+        if not s:
+            return
+        note = self.txt_notes.toPlainText()
+        try:
+            if self._store and hasattr(self._store, "update_pomodoro_session_note"):
+                self._store.update_pomodoro_session_note(int(s["id"]), note)
+                s["note"] = note
+                self.btn_save_note.setEnabled(False)
+        except Exception:
+            pass
+
+    def _on_notes_changed(self):
+        if self._selected_history_session:
+            self.btn_save_note.setEnabled(True)
 
     # ------------------------------ UI -----------------------------------------
 
@@ -182,11 +223,15 @@ class PomodoroPage(QtWidgets.QWidget):
         self.txt_notes = QtWidgets.QTextEdit()
         self.txt_notes.setPlaceholderText("Pomodoro notlarını buraya yaz…")
         l_lo.addWidget(self.txt_notes, 1)
+        self.btn_save_note = QtWidgets.QPushButton("Kaydet")
+        self.btn_save_note.setEnabled(False)
+        l_lo.addWidget(self.btn_save_note)
 
         lbl_hist = QtWidgets.QLabel("Geçmiş Pomodorolar")
         lbl_hist.setStyleSheet(f"color:{COLOR_TEXT_MUTED};")
         l_lo.addWidget(lbl_hist)
         self.list_history = QtWidgets.QListWidget()
+        self.list_history.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         l_lo.addWidget(self.list_history, 1)
         tri.addWidget(left, 1)
 
@@ -345,6 +390,9 @@ class PomodoroPage(QtWidgets.QWidget):
         self.project_bar.changed.connect(self._on_proj_changed)
         self.list_tasks.itemSelectionChanged.connect(self._on_task_selected)
         self.list_tasks.itemDoubleClicked.connect(self._emit_task_activated)
+        self.list_history.itemSelectionChanged.connect(self._on_history_selected)
+        self.btn_save_note.clicked.connect(self._save_history_note)
+        self.txt_notes.textChanged.connect(self._on_notes_changed)
     def _on_refresh_clicked(self):
         self.reload_sidebar()
         self._load_history()
