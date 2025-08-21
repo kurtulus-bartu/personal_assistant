@@ -154,6 +154,12 @@ class SyncOrchestrator(QtCore.QObject):
     def get_pomodoro_sessions(self, task_id: int) -> list[dict]:
         return self.db.list_pomodoro_sessions_for_task(int(task_id))
 
+    def get_recent_pomodoro_sessions(self, limit: int = 20) -> list[dict]:
+        return self.db.list_recent_pomodoro_sessions(limit)
+
+    def update_pomodoro_session_note(self, session_id: int, note: str):
+        self.db.update_pomodoro_session_note(int(session_id), note or "")
+
     # ---------- helpers ----------
     def _emit_all_from_local(self):
         self.tasksUpdated.emit(self.db.get_tasks())

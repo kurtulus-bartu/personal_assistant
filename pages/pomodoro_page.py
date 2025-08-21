@@ -76,13 +76,16 @@ class PomodoroPage(QtWidgets.QWidget):
         self._store = store
         self._task_fetcher = None
         self.reload_sidebar()
+        self._load_history()
 
     def set_tasks(self, tasks: List[Dict[str, Any]]):
         self._task_fetcher = lambda: tasks
         self.reload_sidebar()
+        self._load_history()
 
     def reload_tasks(self):
         self.reload_sidebar()
+        self._load_history()
 
     def reload_sidebar(self):
         tasks: List[Dict[str, Any]] = []
@@ -102,6 +105,35 @@ class PomodoroPage(QtWidgets.QWidget):
         inprog = [t for t in all_norm if self._is_in_progress(t)]
         self._tasks_all = inprog if inprog else all_norm
         self._fill_tag_project_filters()
+
+    def _load_history(self):
+        self.list_history.clear()
+        if not self._store or not hasattr(self._store, "get_recent_pomodoro_sessions"):
+            return
+        try:
+            sessions = self._store.get_recent_pomodoro_sessions()
+        except Exception:
+            sessions = []
+        for s in sessions:
+            try:
+                ended = datetime.fromisoformat(s["ended_at"])
+            except Exception:
+                ended = None
+            dur_m = int(max(1, s.get("actual_secs", 0))) // 60
+            left = ended.strftime('%Y-%m-%d %H:%M') if ended else s.get('ended_at', '')
+            it = QtWidgets.QListWidgetItem()
+            w = QtWidgets.QWidget()
+            row = QtWidgets.QHBoxLayout(w)
+            row.setContentsMargins(8, 6, 8, 6)
+            row.setSpacing(8)
+            lbl_left = QtWidgets.QLabel(left)
+            lbl_right = QtWidgets.QLabel(f"{dur_m}m")
+            lbl_right.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+            row.addWidget(lbl_left, 1)
+            row.addWidget(lbl_right, 1)
+            self.list_history.addItem(it)
+            self.list_history.setItemWidget(it, w)
+            it.setSizeHint(QtCore.QSize(self.list_history.viewport().width() - 12, max(40, w.sizeHint().height())))
 
     # ------------------------------ UI -----------------------------------------
 
@@ -150,6 +182,12 @@ class PomodoroPage(QtWidgets.QWidget):
         self.txt_notes = QtWidgets.QTextEdit()
         self.txt_notes.setPlaceholderText("Pomodoro notlarını buraya yaz…")
         l_lo.addWidget(self.txt_notes, 1)
+
+        lbl_hist = QtWidgets.QLabel("Geçmiş Pomodorolar")
+        lbl_hist.setStyleSheet(f"color:{COLOR_TEXT_MUTED};")
+        l_lo.addWidget(lbl_hist)
+        self.list_history = QtWidgets.QListWidget()
+        l_lo.addWidget(self.list_history, 1)
         tri.addWidget(left, 1)
 
         # Orta: Sayaç (iki mod için stacked)
@@ -295,7 +333,7 @@ class PomodoroPage(QtWidgets.QWidget):
         """)
 
     def _wire(self):
-        self.btn_refresh.clicked.connect(self.reload_sidebar)
+        self.btn_refresh.clicked.connect(self._on_refresh_clicked)
         self.btn_start.clicked.connect(self._start)
         self.btn_pause.clicked.connect(self._pause)
         self.btn_reset.clicked.connect(self._reset)
@@ -307,6 +345,9 @@ class PomodoroPage(QtWidgets.QWidget):
         self.project_bar.changed.connect(self._on_proj_changed)
         self.list_tasks.itemSelectionChanged.connect(self._on_task_selected)
         self.list_tasks.itemDoubleClicked.connect(self._emit_task_activated)
+    def _on_refresh_clicked(self):
+        self.reload_sidebar()
+        self._load_history()
 
     # ------------------------------ Tasks Sidebar -------------------------------
 
@@ -577,6 +618,7 @@ class PomodoroPage(QtWidgets.QWidget):
                     actual_secs=int(actual_secs),
                     note=note
                 )
+                self._load_history()
         except Exception:
             pass
 

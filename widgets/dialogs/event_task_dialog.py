@@ -240,8 +240,9 @@ class EventTaskDialog(QtWidgets.QDialog):
         lbl_note = QtWidgets.QLabel("Seçili pomodoro notu")
         rlo.addWidget(lbl_note)
         self.view_pomo_note = QtWidgets.QTextEdit()
-        self.view_pomo_note.setReadOnly(True)
         rlo.addWidget(self.view_pomo_note, 1)
+        self.btn_save_pomo = QtWidgets.QPushButton("Notu Kaydet")
+        rlo.addWidget(self.btn_save_pomo)
 
         body.addWidget(right_col, 1)
         body.setStretch(0, 1); body.setStretch(1, 1); body.setStretch(2, 1)
@@ -254,6 +255,12 @@ class EventTaskDialog(QtWidgets.QDialog):
                 color: {COLOR_TEXT};
             }}
             QListWidget, QTextEdit {{
+                background: {COLOR_SECONDARY_BG};
+                border: 1px solid #3a3a3a;
+                border-radius: 10px;
+                color: {COLOR_TEXT};
+            }}
+            QPushButton {{
                 background: {COLOR_SECONDARY_BG};
                 border: 1px solid #3a3a3a;
                 border-radius: 10px;
@@ -347,6 +354,8 @@ class EventTaskDialog(QtWidgets.QDialog):
         self.saveBtn.clicked.connect(self._on_save)
         self.recur.postponeBtn.clicked.connect(self._postpone_to_next)
         self.list_pomo.itemSelectionChanged.connect(self._on_pomo_selected)
+        self.btn_save_pomo.clicked.connect(self._save_pomo_note)
+        self.btn_save_pomo.setEnabled(False)
 
         self._load_model(model)
 
@@ -412,6 +421,20 @@ class EventTaskDialog(QtWidgets.QDialog):
         it = self.list_pomo.currentItem()
         s = it.data(QtCore.Qt.ItemDataRole.UserRole) if it else None
         self.view_pomo_note.setPlainText((s or {}).get("note", ""))
+        self.btn_save_pomo.setEnabled(bool(s))
+
+    def _save_pomo_note(self):
+        it = self.list_pomo.currentItem()
+        s = it.data(QtCore.Qt.ItemDataRole.UserRole) if it else None
+        if not s:
+            return
+        note = self.view_pomo_note.toPlainText()
+        try:
+            if self.store and hasattr(self.store, "update_pomodoro_session_note"):
+                self.store.update_pomodoro_session_note(int(s["id"]), note)
+                s["note"] = note
+        except Exception:
+            pass
 
     def _on_rrule_changed(self, r):
         self._model.rrule = r
