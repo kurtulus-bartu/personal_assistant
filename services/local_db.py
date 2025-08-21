@@ -413,3 +413,38 @@ class LocalDB:
                 }
             )
         return out
+
+    def list_recent_pomodoro_sessions(self, limit: int = 20) -> list[dict]:
+        cur = self._conn.cursor()
+        cur.execute(
+            """
+        SELECT id, task_id, started_at, ended_at, planned_secs, actual_secs, note, created_at
+        FROM pomodoro_sessions
+        ORDER BY datetime(ended_at) DESC
+        LIMIT ?
+        """,
+            (limit,),
+        )
+        rows = cur.fetchall()
+        out = []
+        for r in rows:
+            out.append(
+                {
+                    "id": r[0],
+                    "task_id": r[1],
+                    "started_at": r[2],
+                    "ended_at": r[3],
+                    "planned_secs": r[4],
+                    "actual_secs": r[5],
+                    "note": r[6],
+                    "created_at": r[7],
+                }
+            )
+        return out
+
+    def update_pomodoro_session_note(self, session_id: int, note: str):
+        self._conn.execute(
+            "UPDATE pomodoro_sessions SET note=? WHERE id=?",
+            (note, int(session_id)),
+        )
+        self._conn.commit()
