@@ -1,6 +1,12 @@
 import Foundation
 
-public struct SupabaseConfig { public static var url = ""; public static var anonKey = "" }
+// Supabase backend configuration used by the app. The URL and anon key are
+// the same values defined in the Python `services/supabase_api.py` helper so
+// both clients talk to the same project.
+public struct SupabaseConfig {
+    public static var url = "https://mfxykkgmsfqipmqpwnoj.supabase.co"
+    public static var anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1meHlra2dtc2ZxaXBtcXB3bm9qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5NDgwNDIsImV4cCI6MjA3MDUyNDA0Mn0.2bbS-4khj1oFkEz-GsICBS15Nl1d-HVldxvE-nsYbLE"
+}
 
 public final class SupabaseService {
     public static let shared = SupabaseService(); private init() {}
