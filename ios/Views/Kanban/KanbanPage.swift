@@ -67,8 +67,7 @@ public struct KanbanPage: View {
             let st = task.status ?? "todo"
             return st == status &&
                 (selectedTag == nil || task.tag == selectedTag) &&
-                (selectedProject == nil || task.project == selectedProject) &&
-                task.title != task.tag && task.title != task.project
+                (selectedProject == nil || task.project == selectedProject)
         }
     }
 }
