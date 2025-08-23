@@ -2,7 +2,7 @@ import SwiftUI
 
 private struct KanbanColumn: View {
     var title: String
-    var events: [PlannerEvent]
+    var tasks: [PlannerTask]
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
@@ -10,8 +10,8 @@ private struct KanbanColumn: View {
                 .font(.headline)
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(events) { ev in
-                        Text(ev.title)
+                    ForEach(tasks) { task in
+                        Text(task.title)
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Theme.secondaryBG)
@@ -29,22 +29,22 @@ private struct KanbanColumn: View {
 }
 
 public struct KanbanPage: View {
-    @ObservedObject var store: EventStore
+    @StateObject private var store = TaskStore()
     @State private var selectedTag: String?
     @State private var selectedProject: String?
-    public init(store: EventStore) { self.store = store }
+    public init() {}
     public var body: some View {
         VStack {
             HStack {
                 Picker("Tag", selection: $selectedTag) {
                     Text("Tümü").tag(String?.none)
-                    ForEach(Array(Set(store.events.compactMap { $0.tag })), id: \.self) { t in
+                    ForEach(Array(Set(store.tasks.compactMap { $0.tag })), id: \.self) { t in
                         Text(t).tag(String?.some(t))
                     }
                 }
                 Picker("Proje", selection: $selectedProject) {
                     Text("Tümü").tag(String?.none)
-                    ForEach(Array(Set(store.events.compactMap { $0.project })), id: \.self) { p in
+                    ForEach(Array(Set(store.tasks.compactMap { $0.project })), id: \.self) { p in
                         Text(p).tag(String?.some(p))
                     }
                 }
@@ -52,22 +52,23 @@ public struct KanbanPage: View {
             .padding()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    KanbanColumn(title: "Yapılacak", events: filtered(status: "todo"))
-                    KanbanColumn(title: "Yapılıyor", events: filtered(status: "doing"))
-                    KanbanColumn(title: "Bitti", events: filtered(status: "done"))
+                    KanbanColumn(title: "Yapılacak", tasks: filtered(status: "todo"))
+                    KanbanColumn(title: "Yapılıyor", tasks: filtered(status: "doing"))
+                    KanbanColumn(title: "Bitti", tasks: filtered(status: "done"))
                 }
                 .padding(.horizontal)
             }
         }
+        .task { await store.syncFromSupabase() }
         .background(Theme.primaryBG.ignoresSafeArea())
     }
-    private func filtered(status: String) -> [PlannerEvent] {
-        store.events.filter { ev in
-            let st = ev.status ?? "todo"
+    private func filtered(status: String) -> [PlannerTask] {
+        store.tasks.filter { task in
+            let st = task.status ?? "todo"
             return st == status &&
-                (selectedTag == nil || ev.tag == selectedTag) &&
-                (selectedProject == nil || ev.project == selectedProject) &&
-                ev.title != ev.tag && ev.title != ev.project
+                (selectedTag == nil || task.tag == selectedTag) &&
+                (selectedProject == nil || task.project == selectedProject) &&
+                task.title != task.tag && task.title != task.project
         }
     }
 }
