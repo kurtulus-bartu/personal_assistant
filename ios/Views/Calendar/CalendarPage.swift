@@ -208,7 +208,7 @@ private struct WeekView: View {
     var tag: String?
     var project: String?
     @State private var anchor: Int = 0
-    @State private var scrollPosition: Int = 0
+    @State private var scrollPosition: Int? = 0
     private let hoursWidth: CGFloat = 44
     private let rowHeight: CGFloat = 60
     private let ref = Calendar.current.startOfDay(for: Date())
