@@ -56,7 +56,7 @@ public struct CalendarPage: View {
                     Button("Yedekle") { Task { await store.backupToSupabase() } }
                 }
             }
-            .sheet(isPresented: $showKanban) { KanbanPage(store: store) }
+            .sheet(isPresented: $showKanban) { KanbanPage() }
             .task { await store.syncFromSupabase() }
             .background(Theme.primaryBG.ignoresSafeArea())
         }
@@ -111,50 +111,81 @@ private struct WeekView: View {
     var events: [PlannerEvent]
     var tag: String?
     var project: String?
+    @State private var page = 0
     private let dayFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "E dd"; return f
     }()
     var body: some View {
         let week = weekDates(containing: selectedDate)
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                ForEach(week, id: \.self) { day in
-                    Text(dayFormatter.string(from: day))
-                        .frame(maxWidth: .infinity)
-                        .foregroundColor(Theme.text)
-                }
-            }
-            .padding(.vertical, 4)
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(0..<24, id: \.self) { hr in
-                        HStack(spacing: 0) {
-                            ForEach(week, id: \.self) { day in
-                                let evs = eventsFor(day: day, hour: hr)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    ForEach(evs) { ev in
-                                        Text(ev.title)
-                                            .font(.caption)
-                                            .foregroundColor(Theme.text)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
+        let groups = grouped(week)
+        TabView(selection: $page) {
+            ForEach(groups.indices, id: \.self) { idx in
+                let days = groups[idx]
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        Text("")
+                            .frame(width: 40)
+                        ForEach(days, id: \.self) { day in
+                            Text(dayFormatter.string(from: day))
+                                .frame(maxWidth: .infinity)
+                                .foregroundColor(Theme.text)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(0..<24, id: \.self) { hr in
+                                HStack(spacing: 0) {
+                                    Text("\(hr):00")
+                                        .frame(width: 40, alignment: .leading)
+                                        .foregroundColor(Theme.text)
+                                        .font(.caption)
+                                    ForEach(days, id: \.self) { day in
+                                        let evs = eventsFor(day: day, hour: hr)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            ForEach(evs) { ev in
+                                                Text(ev.title)
+                                                    .font(.caption)
+                                                    .foregroundColor(Theme.text)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                            }
+                                            Spacer()
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                                        .padding(4)
+                                        .border(Color.gray.opacity(0.3), width: 0.5)
                                     }
-                                    Spacer()
                                 }
-                                .frame(maxWidth: .infinity, alignment: .topLeading)
-                                .padding(4)
-                                .border(Color.gray.opacity(0.3), width: 0.5)
                                 .frame(height: 60)
                             }
                         }
                     }
                 }
+                .tag(idx)
             }
         }
+        .tabViewStyle(.page(indexDisplayMode: .automatic))
+        .onAppear {
+            if let idx = groups.firstIndex(where: { $0.contains(selectedDate) }) { page = idx }
+        }
+    }
+    private func grouped(_ days: [Date]) -> [[Date]] {
+        var result: [[Date]] = []
+        var index = 0
+        while index < days.count {
+            let end = min(index + 3, days.count)
+            result.append(Array(days[index..<end]))
+            index += 3
+        }
+        return result
     }
     private func eventsFor(day: Date, hour: Int) -> [PlannerEvent] {
         let cal = Calendar.current
+        let hourStart = cal.date(bySettingHour: hour, minute: 0, second: 0, of: day)!
+        let hourEnd = cal.date(byAdding: .hour, value: 1, to: hourStart)!
         return events.filter { ev in
-            cal.isDate(ev.start, inSameDayAs: day) && cal.component(.hour, from: ev.start) == hour &&
+            cal.isDate(ev.start, inSameDayAs: day) &&
+            ev.start < hourEnd && ev.end > hourStart &&
             (tag == nil || ev.tag == tag) && (project == nil || ev.project == project)
         }
     }

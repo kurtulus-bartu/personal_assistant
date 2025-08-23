@@ -71,6 +71,47 @@ public final class SupabaseService {
             _ = try await URLSession.shared.data(for: req)
         }
     }
+    public func fetchTasks() async throws -> [PlannerTask] {
+        let fields = "id,title,status,tag:tags(name),project:projects(name)"
+        let path = "tasks?select=\(fields)&has_time=eq.false"
+        guard let req = request(path: path, method: "GET") else { return [] }
+        let (data, _) = try await URLSession.shared.data(for: req)
+        let dec = JSONDecoder()
+        struct TaskRow: Codable {
+            let id: Int
+            let title: String
+            let status: String?
+            let tag: NameHolder?
+            let project: NameHolder?
+            struct NameHolder: Codable { let name: String }
+        }
+        let rows = try dec.decode([TaskRow].self, from: data)
+        return rows.map { r in
+            PlannerTask(id: r.id,
+                        title: r.title,
+                        status: r.status,
+                        tag: r.tag?.name,
+                        project: r.project?.name)
+        }
+    }
+    public func upsertTasks(_ items: [PlannerTask]) async throws {
+        struct UpsertTask: Codable {
+            var id: Int?
+            var title: String
+            var status: String?
+            var has_time: Bool
+        }
+        let rows = items.map { t in
+            UpsertTask(id: t.id,
+                       title: t.title,
+                       status: t.status,
+                       has_time: false)
+        }
+        let data = try JSONEncoder().encode(rows)
+        if let req = request(path: "tasks?on_conflict=id", body: data) {
+            _ = try await URLSession.shared.data(for: req)
+        }
+    }
     public func uploadWeeklyEnergy(userId: String, items: [DayEnergy]) async {
         let rows: [[String: Any]] = items.map { [
             "user_id": userId,
@@ -78,7 +119,7 @@ public final class SupabaseService {
             "start_at": ISO8601DateFormatter().string(from: $0.date),
             "end_at": ISO8601DateFormatter().string(from: Calendar.current.date(byAdding: .day, value: 1, to: $0.date)!),
             "value_numeric": $0.kcal,
-            "unit": "kcal"
+            "unit": "kcal",
         ]}
         do { let data = try JSONSerialization.data(withJSONObject: rows)
             if let req = request(path: "health_samples", body: data) { _ = try await URLSession.shared.data(for: req) }
