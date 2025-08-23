@@ -1,63 +1,51 @@
 import SwiftUI
-import EventKit
-import EventKitUI
-import UIKit
 
 public struct CalendarPage: View {
-    @State private var granted = false
-    @State private var events: [EKEvent] = []
-    private let store = EKEventStore()
+    @StateObject private var store = EventStore()
+    @State private var selectedDate = Date()
+    @State private var showKanban = false
+    @State private var mode: Mode = .week
+
+    enum Mode: String, CaseIterable { case day = "Gün", week = "Hafta" }
     public init() {}
+
     public var body: some View {
-        ZStack { Theme.primaryBG.ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Takvim").foregroundColor(Theme.text).font(.title2).bold()
-                    Spacer()
-                    Button("Etkinlik Ekle") { presentEditor() }
-                        .foregroundColor(.black)
-                        .padding(.vertical, 8).padding(.horizontal, 12)
-                        .background(Theme.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                }.padding(.horizontal,16).padding(.top,12)
+        NavigationView {
+            VStack {
+                Picker("", selection: $mode) {
+                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .padding([.horizontal, .top])
 
-                List(events, id: \.eventIdentifier) { ev in
-                    VStack(alignment: .leading) {
-                        Text(ev.title ?? "(Başlık yok)").font(.headline)
-                        Text("\(ev.startDate.formatted()) – \(ev.endDate?.formatted() ?? "?")")
-                            .font(.caption).foregroundColor(.secondary)
+                DatePicker("", selection: $selectedDate, displayedComponents: .date)
+                    .datePickerStyle(mode == .week ? .compact : .graphical)
+                    .padding(.horizontal)
+
+                List {
+                    ForEach(store.events(for: selectedDate)) { ev in
+                        VStack(alignment: .leading) {
+                            Text(ev.title).font(.headline)
+                            Text("\(ev.start.formatted(date: .omitted, time: .shortened)) - \(ev.end.formatted(date: .omitted, time: .shortened))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
-                }.listStyle(.plain)
+                    .onMove { idx, dest in store.move(from: idx, to: dest, on: selectedDate) }
+                }
+                .listStyle(.plain)
             }
+            .navigationTitle("Takvim")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { EditButton() }
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button("Kanban") { showKanban = true }
+                    Button("Yedekle") { Task { await store.backupToSupabase() } }
+                }
+            }
+            .sheet(isPresented: $showKanban) { KanbanPage() }
+            .task { await store.syncFromSupabase() }
+            .background(Theme.primaryBG.ignoresSafeArea())
         }
-        .onAppear { requestAccessAndLoad() }
     }
-
-    func requestAccessAndLoad() {
-        store.requestAccess(to: .event) { ok, _ in
-            DispatchQueue.main.async { self.granted = ok; if ok { self.loadUpcoming() } }
-        }
-    }
-
-    func loadUpcoming() {
-        let start = Date()
-        let end = Calendar.current.date(byAdding: .day, value: 14, to: start)!
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
-        self.events = store.events(matching: predicate).sorted { $0.startDate < $1.startDate }
-    }
-
-    func presentEditor() {
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let root = scene.windows.first?.rootViewController else { return }
-        let vc = EKEventEditViewController()
-        vc.eventStore = store
-        vc.editViewDelegate = EKEditDelegateWrapper { _ in self.loadUpcoming(); root.dismiss(animated: true) }
-        root.present(vc, animated: true)
-    }
-}
-
-final class EKEditDelegateWrapper: NSObject, EKEventEditViewDelegate {
-    let onEnd: (EKEventEditViewAction) -> Void
-    init(onEnd: @escaping (EKEventEditViewAction) -> Void) { self.onEnd = onEnd }
-    func eventEditViewController(_ controller: EKEventEditViewController, didCompleteWith action: EKEventEditViewAction) { onEnd(action) }
 }
