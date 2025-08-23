@@ -18,7 +18,7 @@ public struct CalendarPage: View {
                     ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                .padding([.horizontal, .top])
+                .padding(.horizontal)
 
                 HStack {
                     Picker("Tag", selection: $selectedTag) {
@@ -62,14 +62,12 @@ public struct CalendarPage: View {
             }
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    HStack(spacing: 8) {
-                        Text("Takvim").font(.headline)
-                        Spacer()
-                        Button(action: { Task { await store.syncFromSupabase() } }) {
-                            Image(systemName: "arrow.clockwise")
-                        }
+                    Text("Takvim").font(.headline)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { Task { await store.syncFromSupabase() } }) {
+                        Image(systemName: "arrow.clockwise")
                     }
-                    .frame(maxWidth: .infinity)
                 }
             }
             .sheet(isPresented: $showKanban) { KanbanPage() }
@@ -110,7 +108,7 @@ private struct DayColumn: View {
                     let isSmall = durMin <= 45
                     RoundedRectangle(cornerRadius: 8)
                         .fill(isSmall ? Theme.accentBG : Theme.secondaryBG)
-                        .overlay(
+                        .overlay(alignment: .topLeading) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(ev.title).font(.caption).bold().foregroundColor(Theme.text)
                                 if let tag = ev.tag, let pr = ev.project {
@@ -122,8 +120,8 @@ private struct DayColumn: View {
                                 }
                             }
                             .padding(6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        }
                         .frame(height: h)
                         .offset(y: y)
                         .zIndex(isSmall ? 1 : 0)
@@ -198,72 +196,87 @@ private struct WeekView: View {
     var events: [PlannerEvent]
     var tag: String?
     var project: String?
-    @State private var selection = 0
     let rowHeight: CGFloat = 60
-    private let refDate = Calendar.current.date(from: DateComponents(year: 2000, month: 1, day: 1))!
     private let dayFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "E dd"; return f
     }()
+    @State private var days: [Date] = []
+    private let headerHeight: CGFloat = 24
+
     var body: some View {
-        TabView(selection: $selection) {
-            ForEach((-20000)...20000, id: \.self) { idx in
-                let right = Calendar.current.date(byAdding: .day, value: idx, to: refDate)!
-                let days = (-2...0).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: right) }
+        ScrollView(.vertical) {
+            HStack(alignment: .top, spacing: 0) {
                 VStack(spacing: 0) {
-                    HStack(spacing: 0) {
-                        Text("")
-                            .frame(width: 40)
-                        ForEach(days, id: \.self) { day in
-                            Text(dayFormatter.string(from: day))
-                                .frame(maxWidth: .infinity)
-                                .foregroundColor(Theme.text)
-                        }
+                    Text("")
+                        .frame(width: 40, height: headerHeight)
+                    ForEach(0..<24, id: \.self) { hr in
+                        Text("\(hr):00")
+                            .frame(width: 40, height: rowHeight, alignment: .topLeading)
+                            .foregroundColor(Theme.text)
+                            .font(.caption)
                     }
-                    .padding(.vertical, 4)
-                    ScrollView {
-                        HStack(alignment: .top, spacing: 0) {
-                            VStack(spacing: 0) {
-                                ForEach(0..<24, id: \.self) { hr in
-                                    Text("\(hr):00")
-                                        .frame(width: 40, height: rowHeight, alignment: .topLeading)
-                                        .foregroundColor(Theme.text)
-                                        .font(.caption)
-                                }
-                            }
-                            HStack(spacing: 0) {
-                                ForEach(days, id: \.self) { day in
-                                    DayColumn(day: day,
-                                              events: eventsFor(day: day),
-                                              rowHeight: rowHeight)
-                                        .frame(width: 100)
-                                }
-                            }
-                            .overlay(alignment: .topLeading) {
-                                GeometryReader { geo in
-                                    let w = geo.size.width
-                                    let colCount = 3.0
-                                    let step = w / colCount
-                                    Path { p in
-                                        for i in 1..<Int(colCount) {
-                                            let x = CGFloat(i) * step
-                                            p.move(to: CGPoint(x: x, y: 0))
-                                            p.addLine(to: CGPoint(x: x, y: geo.size.height))
-                                        }
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        HStack(spacing: 0) {
+                            ForEach(days.indices, id: \.self) { idx in
+                                let day = days[idx]
+                                Text(dayFormatter.string(from: day))
+                                    .frame(width: 100, height: headerHeight)
+                                    .foregroundColor(Theme.text)
+                                    .onAppear {
+                                        if idx == days.count - 1 { appendDays() }
+                                        if idx == 0 { prependDays() }
                                     }
-                                    .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
+                            }
+                        }
+                        HStack(alignment: .top, spacing: 0) {
+                            ForEach(days.indices, id: \.self) { idx in
+                                let day = days[idx]
+                                DayColumn(day: day,
+                                          events: eventsFor(day: day),
+                                          rowHeight: rowHeight)
+                                    .frame(width: 100)
+                            }
+                        }
+                        .overlay(alignment: .topLeading) {
+                            GeometryReader { geo in
+                                let w = geo.size.width
+                                let colCount = Double(days.count)
+                                let step = w / colCount
+                                Path { p in
+                                    for i in 1..<Int(colCount) {
+                                        let x = CGFloat(i) * step
+                                        p.move(to: CGPoint(x: x, y: 0))
+                                        p.addLine(to: CGPoint(x: x, y: geo.size.height))
+                                    }
                                 }
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
                             }
                         }
                     }
                 }
-                .tag(idx)
             }
         }
-        .tabViewStyle(.page(indexDisplayMode: .automatic))
-        .onAppear { selection = daysBetween(refDate, selectedDate) }
-        .onChange(of: selection) { newValue in
-            if let right = Calendar.current.date(byAdding: .day, value: newValue, to: refDate) {
-                selectedDate = right
+        .onAppear { initializeDays() }
+    }
+
+    private func initializeDays() {
+        days = (-3...3).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: selectedDate) }
+    }
+    private func appendDays() {
+        guard let last = days.last else { return }
+        for i in 1...3 {
+            if let newDay = Calendar.current.date(byAdding: .day, value: i, to: last) {
+                days.append(newDay)
+            }
+        }
+    }
+    private func prependDays() {
+        guard let first = days.first else { return }
+        for i in 1...3 {
+            if let newDay = Calendar.current.date(byAdding: .day, value: -i, to: first) {
+                days.insert(newDay, at: 0)
             }
         }
     }
@@ -273,8 +286,5 @@ private struct WeekView: View {
             (tag == nil || ev.tag == tag) &&
             (project == nil || ev.project == project)
         }
-    }
-    private func daysBetween(_ start: Date, _ end: Date) -> Int {
-        Calendar.current.dateComponents([.day], from: start, to: end).day ?? 0
     }
 }
