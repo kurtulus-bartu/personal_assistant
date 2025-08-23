@@ -43,17 +43,26 @@ public struct CalendarPage: View {
                              events: store.events,
                              tag: selectedTag,
                              project: selectedProject)
+                    .padding(.horizontal)
                 } else {
                     DayTimelineView(date: selectedDate,
                                     events: filteredEvents(for: selectedDate))
+                    .padding(.horizontal)
                 }
+
+                Button("Kanban") { showKanban = true }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Theme.secondaryBG)
+                    .foregroundColor(Theme.text)
+                    .padding([.horizontal, .bottom])
             }
             .navigationTitle("Takvim")
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { EditButton() }
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button("Kanban") { showKanban = true }
-                    Button("Yedekle") { Task { await store.backupToSupabase() } }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { Task { await store.syncFromSupabase() } }) {
+                        Image(systemName: "arrow.clockwise")
+                    }
                 }
             }
             .sheet(isPresented: $showKanban) { KanbanPage() }

@@ -73,7 +73,10 @@ public final class SupabaseService {
     }
     public func fetchTasks() async throws -> [PlannerTask] {
         let fields = "id,title,status,tag:tags(name),project:projects(name)"
-        let path = "tasks?select=\(fields)&has_time=eq.false"
+        // Fetch tasks that do not have an assigned time range. In the
+        // Supabase table these are stored either with `has_time = false`
+        // or with a `NULL` value, so include both conditions.
+        let path = "tasks?select=\(fields)&or=(has_time.eq.false,has_time.is.null)"
         guard let req = request(path: path, method: "GET") else { return [] }
         let (data, _) = try await URLSession.shared.data(for: req)
         let dec = JSONDecoder()
