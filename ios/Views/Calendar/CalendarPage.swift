@@ -20,7 +20,7 @@ public struct CalendarPage: View {
                     }
                     .pickerStyle(.segmented)
                     .padding(.horizontal)
-                    .padding(.top, 4)
+                    .padding(.top, 2)
 
                     HStack {
                         Picker("Tag", selection: $selectedTag) {
@@ -98,6 +98,7 @@ private struct DayColumnView: View {
     let allEvents: [PlannerEvent]
     var tag: String?
     var project: String?
+    var dayWidth: CGFloat? = nil
     let rowHeight: CGFloat = 60
     private var onePx: CGFloat { 1 / scale }
     var body: some View {
@@ -108,11 +109,13 @@ private struct DayColumnView: View {
                         Rectangle()
                             .fill(Color.gray.opacity(0.3))
                             .frame(height: onePx)
+                            .allowsHitTesting(false)
                     }
                     .frame(height: rowHeight)
+                    .allowsHitTesting(false)
                 }
             }
-            ForEach(filteredEvents) { ev in
+            ForEach(orderedEvents) { ev in
                 let y = yOffset(for: ev.start)
                 let h = height(for: ev)
                 let isSmall = isSmallestInCluster(ev, in: filteredEvents)
@@ -131,11 +134,11 @@ private struct DayColumnView: View {
                         }
                         .padding(6)
                     }
-                    .frame(height: h)
+                    .frame(height: max(h, 24))
                     .offset(y: y)
                     .contentShape(Rectangle())
                     .zIndex(isSmall ? 2 : 0)
-                    .gesture(dragGesture15MinSnap(ev))
+                    .highPriorityGesture(dragGesture15MinSnap(ev))
             }
         }
         .frame(minHeight: rowHeight * 24, alignment: .top)
@@ -146,6 +149,15 @@ private struct DayColumnView: View {
             Calendar.current.isDate(ev.start, inSameDayAs: day) &&
             (tag == nil || ev.tag == tag) &&
             (project == nil || ev.project == project)
+        }
+    }
+
+    private var orderedEvents: [PlannerEvent] {
+        filteredEvents.sorted { a, b in
+            if overlaps(a, b) && durationMin(a) != durationMin(b) {
+                return durationMin(a) > durationMin(b)
+            }
+            return a.start < b.start
         }
     }
 
@@ -174,7 +186,7 @@ private struct DayColumnView: View {
     }
 
     private func dragGesture15MinSnap(_ ev: PlannerEvent) -> some Gesture {
-        DragGesture()
+        DragGesture(minimumDistance: 6)
             .onEnded { value in
                 let minutes = (value.translation.height / rowHeight) * 60.0
                 func snap(_ d: Date) -> Date {
@@ -182,9 +194,20 @@ private struct DayColumnView: View {
                     let s = (m / 15) * 15
                     return Calendar.current.date(byAdding: .minute, value: s, to: d)!
                 }
+                var newStart = snap(ev.start)
+                var newEnd = snap(ev.end)
+
+                if let dw = dayWidth {
+                    let dShift = Int((value.translation.width / dw).rounded())
+                    if dShift != 0 {
+                        newStart = Calendar.current.date(byAdding: .day, value: dShift, to: newStart)!
+                        newEnd = Calendar.current.date(byAdding: .day, value: dShift, to: newEnd)!
+                    }
+                }
+
                 if let idx = store.events.firstIndex(where: { $0.id == ev.id }) {
-                    store.events[idx].start = snap(ev.start)
-                    store.events[idx].end = snap(ev.end)
+                    store.events[idx].start = newStart
+                    store.events[idx].end = newEnd
                     store.save()
                     Task { await store.backupToSupabase() }
                 }
@@ -251,15 +274,15 @@ private struct WeekView: View {
                         let d = dateFor(index: anchor - (2 - i))
                         Text(dayLabel(d))
                             .font(.footnote).bold()
-                            .frame(width: dayWidth, height: 28)
+                            .frame(width: dayWidth, height: 22)
                             .foregroundColor(Theme.text)
                     }
                 }
                 .padding(.vertical, 0)
                 .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.25))
+                    Rectangle().fill(Color.gray.opacity(0.25))
                         .frame(height: onePx)
+                        .allowsHitTesting(false)
                 }
 
                 ScrollView(.vertical) {
@@ -285,10 +308,18 @@ private struct WeekView: View {
                         ScrollView(.horizontal) {
                             LazyHStack(spacing: 0) {
                                 ForEach(-20000...20000, id: \.self) { idx in
-                                    DayColumnView(day: dateFor(index: idx), allEvents: events, tag: tag, project: project)
+                                    DayColumnView(day: dateFor(index: idx),
+                                                  allEvents: events,
+                                                  tag: tag,
+                                                  project: project,
+                                                  dayWidth: dayWidth)
                                         .id(idx)
                                         .frame(width: dayWidth)
-                                        .border(Color.gray.opacity(0.3), width: onePx)
+                                        .overlay(alignment: .trailing) {
+                                            Rectangle().fill(Color.gray.opacity(0.3))
+                                                .frame(width: onePx)
+                                                .allowsHitTesting(false)
+                                        }
                                 }
                             }
                             .scrollTargetLayout()
