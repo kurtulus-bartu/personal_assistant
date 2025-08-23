@@ -100,7 +100,7 @@ private struct DayColumnView: View {
     var project: String?
     var dayWidth: CGFloat? = nil
     let rowHeight: CGFloat
-    @Binding var isDragging
+    @Binding var isDragging: Bool
     private var onePx: CGFloat { 1 / scale }
     var body: some View {
         ZStack(alignment: .topLeading) {
