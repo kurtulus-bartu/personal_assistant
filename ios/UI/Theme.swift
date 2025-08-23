@@ -4,6 +4,7 @@ public struct Theme {
     public static let primaryBG = Color(hex: "#212121")
     public static let secondaryBG = Color(hex: "#2d2d2d")
     public static let accent      = Color(hex: "#11989C")
+    public static let accentBG    = Theme.accent.opacity(0.3)
     public static let text        = Color(hex: "#EEEEEE")
     public static let textMuted   = Color(hex: "#AEAEAE")
 }

@@ -38,17 +38,18 @@ public struct CalendarPage: View {
                 }
                 .padding(.horizontal)
 
+                let H: CGFloat = 16
                 if mode == .week {
                     WeekView(selectedDate: $selectedDate,
                              events: store.events,
                              tag: selectedTag,
                              project: selectedProject)
-                    .padding(.horizontal)
+                    .padding(.horizontal, H)
                     .environmentObject(store)
                 } else {
                     DayTimelineView(date: selectedDate,
                                     events: filteredEvents(for: selectedDate))
-                    .padding(.horizontal)
+                    .padding(.horizontal, H)
                     .environmentObject(store)
                 }
 
@@ -59,13 +60,16 @@ public struct CalendarPage: View {
                     .foregroundColor(Theme.text)
                     .padding([.horizontal, .bottom])
             }
-            .navigationTitle("Takvim")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { Task { await store.syncFromSupabase() } }) {
-                        Image(systemName: "arrow.clockwise")
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 8) {
+                        Text("Takvim").font(.headline)
+                        Spacer()
+                        Button(action: { Task { await store.syncFromSupabase() } }) {
+                            Image(systemName: "arrow.clockwise")
+                        }
                     }
+                    .frame(maxWidth: .infinity)
                 }
             }
             .sheet(isPresented: $showKanban) { KanbanPage() }
@@ -79,12 +83,6 @@ public struct CalendarPage: View {
             (selectedProject == nil || ev.project == selectedProject)
         }
     }
-}
-
-private func weekDates(containing date: Date) -> [Date] {
-    let cal = Calendar.current
-    let start = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date))!
-    return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
 }
 
 private struct DayColumn: View {
@@ -108,18 +106,27 @@ private struct DayColumn: View {
                 ForEach(events) { ev in
                     let y = yOffset(for: ev.start, rowHeight: rowHeight)
                     let h = height(for: ev, rowHeight: rowHeight)
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Theme.secondaryBG)
+                    let durMin = Int(ev.end.timeIntervalSince(ev.start) / 60)
+                    let isSmall = durMin <= 45
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isSmall ? Theme.accentBG : Theme.secondaryBG)
                         .overlay(
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(ev.title).font(.caption).foregroundColor(Theme.text)
-                                Text(timeRange(ev)).font(.system(size: 10)).foregroundColor(Theme.textMuted)
+                                Text(ev.title).font(.caption).bold().foregroundColor(Theme.text)
+                                if let tag = ev.tag, let pr = ev.project {
+                                    Text("\(tag) > \(pr)").font(.system(size: 10)).foregroundColor(Theme.textMuted)
+                                } else if let tag = ev.tag {
+                                    Text(tag).font(.system(size: 10)).foregroundColor(Theme.textMuted)
+                                } else if let pr = ev.project {
+                                    Text(pr).font(.system(size: 10)).foregroundColor(Theme.textMuted)
+                                }
                             }
                             .padding(6)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         )
                         .frame(height: h)
                         .offset(y: y)
+                        .zIndex(isSmall ? 1 : 0)
                         .gesture(dragGesture(for: ev, day: day, rowHeight: rowHeight, dayWidth: dayWidth))
                 }
             }
@@ -136,20 +143,21 @@ private struct DayColumn: View {
         let dur = ev.end.timeIntervalSince(ev.start) / 3600
         return CGFloat(dur) * rowHeight
     }
-    private func timeRange(_ ev: PlannerEvent) -> String {
-        "\(ev.start.formatted(date: .omitted, time: .shortened)) - \(ev.end.formatted(date: .omitted, time: .shortened))"
+    private func snapped(_ date: Date, by minutesDelta: CGFloat) -> Date {
+        let m = Int(minutesDelta.rounded())
+        let snap = (m / 15) * 15
+        return Calendar.current.date(byAdding: .minute, value: snap, to: date)!
     }
     private func dragGesture(for ev: PlannerEvent, day: Date, rowHeight: CGFloat, dayWidth: CGFloat) -> some Gesture {
         DragGesture()
             .onEnded { value in
-                let minuteDelta = Int((value.translation.height / rowHeight) * 60)
-                let dayDelta = Int((value.translation.width / dayWidth).rounded())
-                let cal = Calendar.current
-                var newStart = cal.date(byAdding: .minute, value: minuteDelta, to: ev.start) ?? ev.start
-                var newEnd = cal.date(byAdding: .minute, value: minuteDelta, to: ev.end) ?? ev.end
-                if dayDelta != 0 {
-                    newStart = cal.date(byAdding: .day, value: dayDelta, to: newStart) ?? newStart
-                    newEnd = cal.date(byAdding: .day, value: dayDelta, to: newEnd) ?? newEnd
+                let minutes = (value.translation.height / rowHeight) * 60.0
+                let dayShift = Int((value.translation.width / dayWidth).rounded())
+                var newStart = snapped(ev.start, by: minutes)
+                var newEnd = snapped(ev.end, by: minutes)
+                if dayShift != 0 {
+                    newStart = Calendar.current.date(byAdding: .day, value: dayShift, to: newStart) ?? newStart
+                    newEnd = Calendar.current.date(byAdding: .day, value: dayShift, to: newEnd) ?? newEnd
                 }
                 if let idx = store.events.firstIndex(where: { $0.id == ev.id }) {
                     store.events[idx].start = newStart
@@ -190,17 +198,17 @@ private struct WeekView: View {
     var events: [PlannerEvent]
     var tag: String?
     var project: String?
-    @State private var page = 0
+    @State private var selection = 0
     let rowHeight: CGFloat = 60
+    private let refDate = Calendar.current.date(from: DateComponents(year: 2000, month: 1, day: 1))!
     private let dayFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "E dd"; return f
     }()
     var body: some View {
-        let week = weekDates(containing: selectedDate)
-        let groups = grouped(week)
-        TabView(selection: $page) {
-            ForEach(groups.indices, id: \.self) { idx in
-                let days = groups[idx]
+        TabView(selection: $selection) {
+            ForEach((-20000)...20000, id: \.self) { idx in
+                let right = Calendar.current.date(byAdding: .day, value: idx, to: refDate)!
+                let days = (-2...0).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: right) }
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
                         Text("")
@@ -222,11 +230,28 @@ private struct WeekView: View {
                                         .font(.caption)
                                 }
                             }
-                            ForEach(days, id: \.self) { day in
-                                DayColumn(day: day,
-                                          events: eventsFor(day: day),
-                                          rowHeight: rowHeight)
-                                    .frame(width: 100)
+                            HStack(spacing: 0) {
+                                ForEach(days, id: \.self) { day in
+                                    DayColumn(day: day,
+                                              events: eventsFor(day: day),
+                                              rowHeight: rowHeight)
+                                        .frame(width: 100)
+                                }
+                            }
+                            .overlay(alignment: .topLeading) {
+                                GeometryReader { geo in
+                                    let w = geo.size.width
+                                    let colCount = 3.0
+                                    let step = w / colCount
+                                    Path { p in
+                                        for i in 1..<Int(colCount) {
+                                            let x = CGFloat(i) * step
+                                            p.move(to: CGPoint(x: x, y: 0))
+                                            p.addLine(to: CGPoint(x: x, y: geo.size.height))
+                                        }
+                                    }
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
+                                }
                             }
                         }
                     }
@@ -235,8 +260,11 @@ private struct WeekView: View {
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .automatic))
-        .onAppear {
-            if let idx = groups.firstIndex(where: { $0.contains(selectedDate) }) { page = idx }
+        .onAppear { selection = daysBetween(refDate, selectedDate) }
+        .onChange(of: selection) { newValue in
+            if let right = Calendar.current.date(byAdding: .day, value: newValue, to: refDate) {
+                selectedDate = right
+            }
         }
     }
     private func eventsFor(day: Date) -> [PlannerEvent] {
@@ -246,14 +274,7 @@ private struct WeekView: View {
             (project == nil || ev.project == project)
         }
     }
-    private func grouped(_ days: [Date]) -> [[Date]] {
-        var result: [[Date]] = []
-        var index = 0
-        while index < days.count {
-            let end = min(index + 3, days.count)
-            result.append(Array(days[index..<end]))
-            index += 3
-        }
-        return result
+    private func daysBetween(_ start: Date, _ end: Date) -> Int {
+        Calendar.current.dateComponents([.day], from: start, to: end).day ?? 0
     }
 }
