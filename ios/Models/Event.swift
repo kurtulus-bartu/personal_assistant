@@ -1,14 +1,14 @@
 import Foundation
 
 public struct PlannerEvent: Identifiable, Codable, Hashable {
-    public var id: UUID
+    public var id: Int
     public var title: String
     public var start: Date
     public var end: Date
     public var status: String?
     public var tag: String?
     public var project: String?
-    public init(id: UUID = UUID(),
+    public init(id: Int = Int(Date().timeIntervalSince1970),
                 title: String,
                 start: Date,
                 end: Date,
