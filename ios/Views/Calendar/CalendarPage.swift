@@ -80,8 +80,8 @@ public struct CalendarPage: View {
             .sheet(isPresented: $showKanban) { KanbanPage() }
             .task { await store.syncFromSupabase() }
             .background(Theme.primaryBG.ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
         }
-        .navigationBarTitleDisplayMode(.inline)
     }
     private func filteredEvents(for day: Date) -> [PlannerEvent] {
         store.events(for: day).filter { ev in
@@ -93,29 +93,31 @@ public struct CalendarPage: View {
 
 private struct DayColumnView: View {
     @EnvironmentObject var store: EventStore
+    @Environment(\.displayScale) private var scale
     let day: Date
     let allEvents: [PlannerEvent]
     var tag: String?
     var project: String?
     let rowHeight: CGFloat = 60
+    private var onePx: CGFloat { 1 / scale }
     var body: some View {
         ZStack(alignment: .topLeading) {
             VStack(spacing: 0) {
                 ForEach(0..<24, id: \.self) { _ in
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(height: 0.5)
-                        .offset(y: rowHeight)
-                        .frame(height: rowHeight)
+                    ZStack(alignment: .bottomLeading) {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.3))
+                            .frame(height: onePx)
+                    }
+                    .frame(height: rowHeight)
                 }
             }
             ForEach(filteredEvents) { ev in
                 let y = yOffset(for: ev.start)
                 let h = height(for: ev)
-                let overlaps = filteredEvents.filter { $0.id != ev.id && $0.start < ev.end && $0.end > ev.start }
-                let isShorter = overlaps.contains { ($0.end.timeIntervalSince($0.start)) > ev.end.timeIntervalSince(ev.start) }
+                let isSmall = isSmallestInCluster(ev, in: filteredEvents)
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isShorter ? Theme.accentBG : Theme.secondaryBG)
+                    .fill(isSmall ? Theme.accentBG : Theme.secondaryBG)
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(ev.title).font(.caption).bold().foregroundColor(Theme.text)
@@ -132,7 +134,7 @@ private struct DayColumnView: View {
                     .frame(height: h)
                     .offset(y: y)
                     .contentShape(Rectangle())
-                    .zIndex(isShorter ? 1 : 0)
+                    .zIndex(isSmall ? 2 : 0)
                     .gesture(dragGesture15MinSnap(ev))
             }
         }
@@ -158,6 +160,19 @@ private struct DayColumnView: View {
         CGFloat(ev.end.timeIntervalSince(ev.start) / 3600) * rowHeight
     }
 
+    private func durationMin(_ ev: PlannerEvent) -> Int {
+        Int(ev.end.timeIntervalSince(ev.start) / 60)
+    }
+    private func overlaps(_ a: PlannerEvent, _ b: PlannerEvent) -> Bool {
+        a.start < b.end && b.start < a.end
+    }
+    private func isSmallestInCluster(_ ev: PlannerEvent, in events: [PlannerEvent]) -> Bool {
+        let cluster = events.filter { overlaps($0, ev) }
+        guard cluster.count > 1 else { return false }
+        let minDur = cluster.map(durationMin).min()!
+        return durationMin(ev) == minDur
+    }
+
     private func dragGesture15MinSnap(_ ev: PlannerEvent) -> some Gesture {
         DragGesture()
             .onEnded { value in
@@ -179,16 +194,18 @@ private struct DayColumnView: View {
 
 private struct DayTimelineView: View {
     @EnvironmentObject var store: EventStore
+    @Environment(\.displayScale) private var scale
     var date: Date
     var events: [PlannerEvent]
     private let hoursWidth: CGFloat = 44
     private let rowHeight: CGFloat = 60
+    private var onePx: CGFloat { 1 / scale }
     var body: some View {
         ScrollView(.vertical) {
             ZStack(alignment: .topLeading) {
                 VStack(spacing: 0) {
                     ForEach(0..<24, id: \.self) { hr in
-                        ZStack(alignment: .topLeading) {
+                        ZStack(alignment: .bottomLeading) {
                             Text("\(hr):00")
                                 .foregroundColor(Theme.text)
                                 .font(.caption)
@@ -196,8 +213,7 @@ private struct DayTimelineView: View {
 
                             Rectangle()
                                 .fill(Color.gray.opacity(0.3))
-                                .frame(height: 0.5)
-                                .offset(y: rowHeight)
+                                .frame(height: onePx)
                         }
                         .frame(width: hoursWidth, height: rowHeight, alignment: .topLeading)
                     }
@@ -217,11 +233,13 @@ private struct WeekView: View {
     var events: [PlannerEvent]
     var tag: String?
     var project: String?
+    @Environment(\.displayScale) private var scale
     @State private var anchor: Int = 0
     @State private var scrollPosition: Int?
     private let hoursWidth: CGFloat = 44
     private let rowHeight: CGFloat = 60
     private let ref = Calendar.current.startOfDay(for: Date())
+    private var onePx: CGFloat { 1 / scale }
 
     var body: some View {
         GeometryReader { geo in
@@ -232,17 +250,23 @@ private struct WeekView: View {
                     ForEach(0..<3, id: \.self) { i in
                         let d = dateFor(index: anchor - (2 - i))
                         Text(dayLabel(d))
-                            .frame(width: dayWidth)
+                            .font(.footnote).bold()
+                            .frame(width: dayWidth, height: 28)
                             .foregroundColor(Theme.text)
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, 0)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.25))
+                        .frame(height: onePx)
+                }
 
                 ScrollView(.vertical) {
                     ZStack(alignment: .topLeading) {
                         VStack(spacing: 0) {
                             ForEach(0..<24, id: \.self) { hr in
-                                ZStack(alignment: .topLeading) {
+                                ZStack(alignment: .bottomLeading) {
                                     Text("\(hr):00")
                                         .foregroundColor(Theme.text)
                                         .font(.caption)
@@ -250,8 +274,7 @@ private struct WeekView: View {
 
                                     Rectangle()
                                         .fill(Color.gray.opacity(0.3))
-                                        .frame(height: 0.5)
-                                        .offset(y: rowHeight)
+                                        .frame(height: onePx)
                                 }
                                 .frame(width: hoursWidth, height: rowHeight, alignment: .topLeading)
                             }
@@ -265,7 +288,7 @@ private struct WeekView: View {
                                     DayColumnView(day: dateFor(index: idx), allEvents: events, tag: tag, project: project)
                                         .id(idx)
                                         .frame(width: dayWidth)
-                                        .border(Color.gray.opacity(0.3), width: 0.5)
+                                        .border(Color.gray.opacity(0.3), width: onePx)
                                 }
                             }
                             .scrollTargetLayout()
