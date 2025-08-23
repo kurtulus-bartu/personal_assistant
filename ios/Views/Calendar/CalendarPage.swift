@@ -13,7 +13,7 @@ public struct CalendarPage: View {
 
     public var body: some View {
         NavigationView {
-            VStack {
+            VStack(spacing: 0) {
                 VStack(spacing: 8) {
                     Picker("", selection: $mode) {
                         ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -113,7 +113,7 @@ private struct DayColumnView: View {
                 let isSmall = ev.end.timeIntervalSince(ev.start) <= 45*60
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isSmall ? Theme.accentBG : Theme.secondaryBG)
-                    .overlay(
+                    .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(ev.title).font(.caption).bold().foregroundColor(Theme.text)
                             if let tag = ev.tag, let pr = ev.project {
@@ -125,10 +125,10 @@ private struct DayColumnView: View {
                             }
                         }
                         .padding(6)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                    )
+                    }
                     .frame(height: h)
                     .offset(y: y)
+                    .contentShape(Rectangle())
                     .zIndex(isSmall ? 1 : 0)
                     .gesture(dragGesture15MinSnap(ev))
             }
@@ -185,11 +185,18 @@ private struct DayTimelineView: View {
             ZStack(alignment: .topLeading) {
                 VStack(spacing: 0) {
                     ForEach(0..<24, id: \.self) { hr in
-                        Text("\(hr):00")
-                            .foregroundColor(Theme.text)
-                            .font(.caption)
-                            .frame(width: hoursWidth, height: rowHeight, alignment: .topLeading)
-                            .border(Color.gray.opacity(0.3), width: 0.5)
+                        ZStack(alignment: .topLeading) {
+                            Text("\(hr):00")
+                                .foregroundColor(Theme.text)
+                                .font(.caption)
+                                .padding(.top, 2)
+
+                            Rectangle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(height: 0.5)
+                                .offset(y: rowHeight - 0.5)
+                        }
+                        .frame(width: hoursWidth, height: rowHeight, alignment: .topLeading)
                     }
                 }
                 .frame(width: hoursWidth)
@@ -208,7 +215,7 @@ private struct WeekView: View {
     var tag: String?
     var project: String?
     @State private var anchor: Int = 0
-    @State private var scrollPosition: Int = 0
+    @State private var scrollPosition: Int?
     private let hoursWidth: CGFloat = 44
     private let rowHeight: CGFloat = 60
     private let ref = Calendar.current.startOfDay(for: Date())
@@ -232,11 +239,18 @@ private struct WeekView: View {
                     ZStack(alignment: .topLeading) {
                         VStack(spacing: 0) {
                             ForEach(0..<24, id: \.self) { hr in
-                                Text("\(hr):00")
-                                    .foregroundColor(Theme.text)
-                                    .font(.caption)
-                                    .frame(width: hoursWidth, height: rowHeight, alignment: .topLeading)
-                                    .border(Color.gray.opacity(0.3), width: 0.5)
+                                ZStack(alignment: .topLeading) {
+                                    Text("\(hr):00")
+                                        .foregroundColor(Theme.text)
+                                        .font(.caption)
+                                        .padding(.top, 2)
+
+                                    Rectangle()
+                                        .fill(Color.gray.opacity(0.3))
+                                        .frame(height: 0.5)
+                                        .offset(y: rowHeight - 0.5)
+                                }
+                                .frame(width: hoursWidth, height: rowHeight, alignment: .topLeading)
                             }
                         }
                         .frame(width: hoursWidth)
@@ -246,6 +260,7 @@ private struct WeekView: View {
                             LazyHStack(spacing: 0) {
                                 ForEach(-20000...20000, id: \.self) { idx in
                                     DayColumnView(day: dateFor(index: idx), allEvents: events, tag: tag, project: project)
+                                        .id(idx)
                                         .frame(width: dayWidth)
                                         .border(Color.gray.opacity(0.3), width: 0.5)
                                 }
@@ -267,6 +282,11 @@ private struct WeekView: View {
             .onChange(of: selectedDate) { new in
                 anchor = daysBetween(ref, new)
                 scrollPosition = anchor - 2
+            }
+            .onChange(of: scrollPosition) { idx in
+                guard let idx else { return }
+                anchor = idx + 2
+                selectedDate = dateFor(index: anchor)
             }
         }
     }
