@@ -99,7 +99,7 @@ private struct DayColumnView: View {
     var project: String?
     var dayWidth: CGFloat? = nil
     let rowHeight: CGFloat
-    @Binding var isDragging
+    @Binding var isDragging: Bool
     @GestureState private var isPressing = false
 
     var body: some View {
@@ -242,7 +242,8 @@ private struct DayTimelineView: View {
         ScrollView(.vertical) {
             ZStack(alignment: .topLeading) {
                 HorizontalLines(rowHeight: rowHeight, onePx: onePx)
-                    .frame(maxWidth: .infinity, height: rowHeight * 24, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .frame(height: rowHeight * 24)
                     .allowsHitTesting(false)
 
                 VStack(spacing: 0) {
@@ -303,7 +304,8 @@ private struct WeekView: View {
                 ScrollView(.vertical) {
                     ZStack(alignment: .topLeading) {
                         HorizontalLines(rowHeight: rowHeight, onePx: onePx)
-                            .frame(maxWidth: .infinity, height: rowHeight * 24, alignment: .topLeading)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                            .frame(height: rowHeight * 24)
                             .allowsHitTesting(false)
 
                         VStack(spacing: 0) {
