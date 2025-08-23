@@ -100,6 +100,7 @@ private struct DayColumnView: View {
     var project: String?
     var dayWidth: CGFloat? = nil
     let rowHeight: CGFloat
+    @Binding var isDragging
     private var onePx: CGFloat { 1 / scale }
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -134,12 +135,13 @@ private struct DayColumnView: View {
                             }
                         }
                         .padding(6)
+                        .allowsHitTesting(false)
                     }
                     .frame(height: max(h, 24))
                     .offset(y: y)
                     .contentShape(Rectangle())
                     .zIndex(isSmall ? 2 : 0)
-                    .highPriorityGesture(dragGesture15MinSnap(ev))
+                    .gesture(dragGesture15MinSnap(ev))
             }
         }
         .frame(minHeight: rowHeight * 24, alignment: .top)
@@ -188,7 +190,11 @@ private struct DayColumnView: View {
 
     private func dragGesture15MinSnap(_ ev: PlannerEvent) -> some Gesture {
         DragGesture(minimumDistance: 6)
+            .onChanged { _ in
+                isDragging = true
+            }
             .onEnded { value in
+                defer { isDragging = false }
                 let minutes = (value.translation.height / rowHeight) * 60.0
                 func snap(_ d: Date) -> Date {
                     let m = Int(minutes.rounded())
@@ -223,6 +229,7 @@ private struct DayTimelineView: View {
     var events: [PlannerEvent]
     private let hoursWidth: CGFloat = 44
     private let rowHeight: CGFloat = 60
+    @State private var isDraggingEvent = false
     private var onePx: CGFloat { 1 / scale }
     var body: some View {
         ScrollView(.vertical) {
@@ -244,10 +251,11 @@ private struct DayTimelineView: View {
                 .frame(width: hoursWidth)
                 .allowsHitTesting(false)
 
-                DayColumnView(day: date, allEvents: events, tag: nil, project: nil, dayWidth: nil, rowHeight: rowHeight)
+                DayColumnView(day: date, allEvents: events, tag: nil, project: nil, dayWidth: nil, rowHeight: rowHeight, isDragging: $isDraggingEvent)
                     .padding(.leading, hoursWidth)
             }
         }
+        .scrollDisabled(isDraggingEvent)
     }
 }
 
@@ -264,6 +272,7 @@ private struct WeekView: View {
     private let rowHeight: CGFloat = 60
     private let ref = Calendar.current.startOfDay(for: Date())
     private var onePx: CGFloat { 1 / scale }
+    @State private var isDraggingEvent = false
 
     var body: some View {
         GeometryReader { geo in
@@ -313,7 +322,8 @@ private struct WeekView: View {
                                                   tag: tag,
                                                   project: project,
                                                   dayWidth: dayWidth,
-                                                  rowHeight: rowHeight)
+                                                  rowHeight: rowHeight,
+                                                  isDragging: $isDraggingEvent)
                                         .id(idx)
                                         .frame(width: dayWidth)
                                         .overlay(alignment: .trailing) {
@@ -325,6 +335,7 @@ private struct WeekView: View {
                             }
                             .scrollTargetLayout()
                         }
+                        .scrollDisabled(isDraggingEvent)
                         .scrollIndicators(.hidden)
                         .scrollTargetBehavior(.viewAligned)
                         .scrollPosition(id: $scrollPosition)
@@ -332,6 +343,7 @@ private struct WeekView: View {
                         .padding(.leading, hoursWidth)
                     }
                 }
+                .scrollDisabled(isDraggingEvent)
             }
             .onAppear {
                 anchor = daysBetween(ref, selectedDate)
