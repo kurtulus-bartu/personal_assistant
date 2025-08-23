@@ -93,7 +93,6 @@ public struct CalendarPage: View {
 
 private struct DayColumnView: View {
     @EnvironmentObject var store: EventStore
-    @Environment(\.displayScale) private var scale
     let day: Date
     let allEvents: [PlannerEvent]
     var tag: String?
@@ -101,22 +100,10 @@ private struct DayColumnView: View {
     var dayWidth: CGFloat? = nil
     let rowHeight: CGFloat
     @Binding var isDragging
-    private var onePx: CGFloat { 1 / scale }
+    @GestureState private var isPressing = false
+
     var body: some View {
         ZStack(alignment: .topLeading) {
-            VStack(spacing: 0) {
-                ForEach(0..<24, id: \.self) { _ in
-                    VStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(height: onePx)
-                            .allowsHitTesting(false)
-                    }
-                    .frame(height: rowHeight)
-                }
-            }
-
             ForEach(orderedEvents) { ev in
                 let y = yOffset(for: ev.start)
                 let h = height(for: ev)
@@ -140,8 +127,8 @@ private struct DayColumnView: View {
                     .frame(height: max(h, 24))
                     .offset(y: y)
                     .contentShape(Rectangle())
-                    .zIndex(isSmall ? 2 : 0)
-                    .gesture(dragGesture15MinSnap(ev))
+                    .zIndex(stackZIndex(for: ev))
+                    .gesture(dragGesturePickAndMove(ev))
             }
         }
         .frame(minHeight: rowHeight * 24, alignment: .top)
@@ -162,6 +149,18 @@ private struct DayColumnView: View {
             }
             return a.start < b.start
         }
+    }
+
+    private func stackZIndex(for ev: PlannerEvent) -> Double {
+        let cluster = filteredEvents.filter { overlaps($0, ev) }
+        guard cluster.count > 1 else { return 1 }
+        let ordered = cluster.sorted {
+            if durationMin($0) != durationMin($1) { return durationMin($0) < durationMin($1) }
+            if $0.start != $1.start { return $0.start > $1.start }
+            return $0.id > $1.id
+        }
+        let idx = ordered.firstIndex(where: { $0.id == ev.id }) ?? 0
+        return 1000 + Double(idx)
     }
 
     private func yOffset(for start: Date) -> CGFloat {
@@ -188,14 +187,22 @@ private struct DayColumnView: View {
         return durationMin(ev) == minDur
     }
 
-    private func dragGesture15MinSnap(_ ev: PlannerEvent) -> some Gesture {
-        DragGesture(minimumDistance: 6)
-            .onChanged { _ in
-                isDragging = true
+    private func dragGesturePickAndMove(_ ev: PlannerEvent) -> some Gesture {
+        let press = LongPressGesture(minimumDuration: 0.05)
+            .updating($isPressing) { value, state, _ in
+                if value { state = true }
             }
-            .onEnded { value in
+
+        let drag = DragGesture(minimumDistance: 6)
+
+        return press.sequenced(before: drag)
+            .onChanged { seq in
+                if case .second(true, _) = seq { isDragging = true }
+            }
+            .onEnded { seq in
                 defer { isDragging = false }
-                let minutes = (value.translation.height / rowHeight) * 60.0
+                guard case let .second(true, drag?) = seq else { return }
+                let minutes = (drag.translation.height / rowHeight) * 60.0
                 func snap(_ d: Date) -> Date {
                     let m = Int(minutes.rounded())
                     let s = (m / 15) * 15
@@ -205,7 +212,7 @@ private struct DayColumnView: View {
                 var newEnd = snap(ev.end)
 
                 if let dw = dayWidth {
-                    let dShift = Int((value.translation.width / dw).rounded())
+                    let dShift = Int((drag.translation.width / dw).rounded())
                     if dShift != 0 {
                         newStart = Calendar.current.date(byAdding: .day, value: dShift, to: newStart)!
                         newEnd = Calendar.current.date(byAdding: .day, value: dShift, to: newEnd)!
@@ -234,18 +241,16 @@ private struct DayTimelineView: View {
     var body: some View {
         ScrollView(.vertical) {
             ZStack(alignment: .topLeading) {
+                HorizontalLines(rowHeight: rowHeight, onePx: onePx)
+                    .frame(maxWidth: .infinity, height: rowHeight * 24, alignment: .topLeading)
+                    .allowsHitTesting(false)
+
                 VStack(spacing: 0) {
                     ForEach(0..<24, id: \.self) { hr in
-                        VStack(spacing: 0) {
-                            Text("\(hr):00")
-                                .foregroundColor(Theme.text)
-                                .font(.caption)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Rectangle()
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(height: onePx)
-                        }
-                        .frame(width: hoursWidth, height: rowHeight, alignment: .topLeading)
+                        Text("\(hr):00")
+                            .foregroundColor(Theme.text)
+                            .font(.caption)
+                            .frame(width: hoursWidth, height: rowHeight, alignment: .topLeading)
                     }
                 }
                 .frame(width: hoursWidth)
@@ -297,24 +302,22 @@ private struct WeekView: View {
 
                 ScrollView(.vertical) {
                     ZStack(alignment: .topLeading) {
+                        HorizontalLines(rowHeight: rowHeight, onePx: onePx)
+                            .frame(maxWidth: .infinity, height: rowHeight * 24, alignment: .topLeading)
+                            .allowsHitTesting(false)
+
                         VStack(spacing: 0) {
                             ForEach(0..<24, id: \.self) { hr in
-                                VStack(spacing: 0) {
-                                    Text("\(hr):00")
-                                        .foregroundColor(Theme.text)
-                                        .font(.caption)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    Rectangle()
-                                        .fill(Color.gray.opacity(0.3))
-                                        .frame(height: onePx)
-                                }
-                                .frame(width: hoursWidth, height: rowHeight, alignment: .topLeading)
+                                Text("\(hr):00")
+                                    .foregroundColor(Theme.text)
+                                    .font(.caption)
+                                    .frame(width: hoursWidth, height: rowHeight, alignment: .topLeading)
                             }
                         }
                         .frame(width: hoursWidth)
                         .allowsHitTesting(false)
 
-                        ScrollView(.horizontal) {
+        ScrollView(.horizontal) {
                             LazyHStack(spacing: 0) {
                                 ForEach(-20000...20000, id: \.self) { idx in
                                     DayColumnView(day: dateFor(index: idx),
@@ -372,7 +375,22 @@ private struct WeekView: View {
         let startB = cal.startOfDay(for: b)
         return cal.dateComponents([.day], from: startA, to: startB).day ?? 0
     }
-    private func dateFor(index: Int) -> Date {
+private func dateFor(index: Int) -> Date {
         Calendar.current.date(byAdding: .day, value: index, to: ref)!
+    }
+}
+
+private struct HorizontalLines: View {
+    let rowHeight: CGFloat
+    let onePx: CGFloat
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(1...24, id: \.self) { i in
+                Rectangle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(height: onePx)
+                    .offset(y: CGFloat(i) * rowHeight)
+            }
+        }
     }
 }
