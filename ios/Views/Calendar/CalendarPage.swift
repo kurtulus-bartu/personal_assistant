@@ -18,9 +18,15 @@ public struct CalendarPage: View {
                 .pickerStyle(.segmented)
                 .padding([.horizontal, .top])
 
-                DatePicker("", selection: $selectedDate, displayedComponents: .date)
-                    .datePickerStyle(mode == .week ? .compact : .graphical)
-                    .padding(.horizontal)
+                if mode == .week {
+                    DatePicker("", selection: $selectedDate, displayedComponents: .date)
+                        .datePickerStyle(.compact)
+                        .padding(.horizontal)
+                } else {
+                    DatePicker("", selection: $selectedDate, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .padding(.horizontal)
+                }
 
                 List {
                     ForEach(store.events(for: selectedDate)) { ev in
