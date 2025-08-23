@@ -99,22 +99,23 @@ private struct DayColumnView: View {
     var tag: String?
     var project: String?
     var dayWidth: CGFloat? = nil
-    let rowHeight: CGFloat = 60
+    let rowHeight: CGFloat
     private var onePx: CGFloat { 1 / scale }
     var body: some View {
         ZStack(alignment: .topLeading) {
             VStack(spacing: 0) {
                 ForEach(0..<24, id: \.self) { _ in
-                    ZStack(alignment: .bottomLeading) {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
                         Rectangle()
                             .fill(Color.gray.opacity(0.3))
                             .frame(height: onePx)
                             .allowsHitTesting(false)
                     }
                     .frame(height: rowHeight)
-                    .allowsHitTesting(false)
                 }
             }
+
             ForEach(orderedEvents) { ev in
                 let y = yOffset(for: ev.start)
                 let h = height(for: ev)
@@ -228,12 +229,11 @@ private struct DayTimelineView: View {
             ZStack(alignment: .topLeading) {
                 VStack(spacing: 0) {
                     ForEach(0..<24, id: \.self) { hr in
-                        ZStack(alignment: .bottomLeading) {
+                        VStack(spacing: 0) {
                             Text("\(hr):00")
                                 .foregroundColor(Theme.text)
                                 .font(.caption)
-                                .padding(.top, 2)
-
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             Rectangle()
                                 .fill(Color.gray.opacity(0.3))
                                 .frame(height: onePx)
@@ -244,7 +244,7 @@ private struct DayTimelineView: View {
                 .frame(width: hoursWidth)
                 .allowsHitTesting(false)
 
-                DayColumnView(day: date, allEvents: events, tag: nil, project: nil)
+                DayColumnView(day: date, allEvents: events, tag: nil, project: nil, dayWidth: nil, rowHeight: rowHeight)
                     .padding(.leading, hoursWidth)
             }
         }
@@ -259,6 +259,7 @@ private struct WeekView: View {
     @Environment(\.displayScale) private var scale
     @State private var anchor: Int = 0
     @State private var scrollPosition: Int?
+    private let headerHeight: CGFloat = 28
     private let hoursWidth: CGFloat = 44
     private let rowHeight: CGFloat = 60
     private let ref = Calendar.current.startOfDay(for: Date())
@@ -273,12 +274,12 @@ private struct WeekView: View {
                     ForEach(0..<3, id: \.self) { i in
                         let d = dateFor(index: anchor - (2 - i))
                         Text(dayLabel(d))
-                            .font(.footnote).bold()
-                            .frame(width: dayWidth, height: 22)
+                            .font(.footnote.bold())
                             .foregroundColor(Theme.text)
+                            .frame(width: dayWidth, height: headerHeight, alignment: .bottom)
                     }
                 }
-                .padding(.vertical, 0)
+                .frame(height: headerHeight)
                 .overlay(alignment: .bottom) {
                     Rectangle().fill(Color.gray.opacity(0.25))
                         .frame(height: onePx)
@@ -289,12 +290,11 @@ private struct WeekView: View {
                     ZStack(alignment: .topLeading) {
                         VStack(spacing: 0) {
                             ForEach(0..<24, id: \.self) { hr in
-                                ZStack(alignment: .bottomLeading) {
+                                VStack(spacing: 0) {
                                     Text("\(hr):00")
                                         .foregroundColor(Theme.text)
                                         .font(.caption)
-                                        .padding(.top, 2)
-
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                     Rectangle()
                                         .fill(Color.gray.opacity(0.3))
                                         .frame(height: onePx)
@@ -312,7 +312,8 @@ private struct WeekView: View {
                                                   allEvents: events,
                                                   tag: tag,
                                                   project: project,
-                                                  dayWidth: dayWidth)
+                                                  dayWidth: dayWidth,
+                                                  rowHeight: rowHeight)
                                         .id(idx)
                                         .frame(width: dayWidth)
                                         .overlay(alignment: .trailing) {
