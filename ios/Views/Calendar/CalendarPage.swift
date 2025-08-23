@@ -240,18 +240,20 @@ private struct WeekView: View {
                             }
                         }
                         .overlay(alignment: .topLeading) {
-                            GeometryReader { geo in
-                                let w = geo.size.width
-                                let colCount = Double(days.count)
-                                let step = w / colCount
-                                Path { p in
-                                    for i in 1..<Int(colCount) {
-                                        let x = CGFloat(i) * step
-                                        p.move(to: CGPoint(x: x, y: 0))
-                                        p.addLine(to: CGPoint(x: x, y: geo.size.height))
+                            if !days.isEmpty {
+                                GeometryReader { geo in
+                                    let w = geo.size.width
+                                    let colCount = Double(days.count)
+                                    let step = w / colCount
+                                    Path { p in
+                                        for i in 1..<Int(colCount) {
+                                            let x = CGFloat(i) * step
+                                            p.move(to: CGPoint(x: x, y: 0))
+                                            p.addLine(to: CGPoint(x: x, y: geo.size.height))
+                                        }
                                     }
+                                    .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
                                 }
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
                             }
                         }
                     }
