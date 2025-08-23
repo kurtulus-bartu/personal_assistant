@@ -14,12 +14,13 @@ public struct CalendarPage: View {
     public var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                VStack(spacing: 8) {
+                VStack(spacing: 4) {
                     Picker("", selection: $mode) {
                         ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
                     .padding(.horizontal)
+                    .padding(.top, 4)
 
                     HStack {
                         Picker("Tag", selection: $selectedTag) {
@@ -80,6 +81,7 @@ public struct CalendarPage: View {
             .task { await store.syncFromSupabase() }
             .background(Theme.primaryBG.ignoresSafeArea())
         }
+        .navigationBarTitleDisplayMode(.inline)
     }
     private func filteredEvents(for day: Date) -> [PlannerEvent] {
         store.events(for: day).filter { ev in
@@ -103,16 +105,17 @@ private struct DayColumnView: View {
                     Rectangle()
                         .fill(Color.gray.opacity(0.3))
                         .frame(height: 0.5)
-                        .offset(y: rowHeight - 0.5)
+                        .offset(y: rowHeight)
                         .frame(height: rowHeight)
                 }
             }
             ForEach(filteredEvents) { ev in
                 let y = yOffset(for: ev.start)
                 let h = height(for: ev)
-                let isSmall = ev.end.timeIntervalSince(ev.start) <= 45*60
+                let overlaps = filteredEvents.filter { $0.id != ev.id && $0.start < ev.end && $0.end > ev.start }
+                let isShorter = overlaps.contains { ($0.end.timeIntervalSince($0.start)) > ev.end.timeIntervalSince(ev.start) }
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSmall ? Theme.accentBG : Theme.secondaryBG)
+                    .fill(isShorter ? Theme.accentBG : Theme.secondaryBG)
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(ev.title).font(.caption).bold().foregroundColor(Theme.text)
@@ -129,7 +132,7 @@ private struct DayColumnView: View {
                     .frame(height: h)
                     .offset(y: y)
                     .contentShape(Rectangle())
-                    .zIndex(isSmall ? 1 : 0)
+                    .zIndex(isShorter ? 1 : 0)
                     .gesture(dragGesture15MinSnap(ev))
             }
         }
@@ -194,7 +197,7 @@ private struct DayTimelineView: View {
                             Rectangle()
                                 .fill(Color.gray.opacity(0.3))
                                 .frame(height: 0.5)
-                                .offset(y: rowHeight - 0.5)
+                                .offset(y: rowHeight)
                         }
                         .frame(width: hoursWidth, height: rowHeight, alignment: .topLeading)
                     }
@@ -233,7 +236,7 @@ private struct WeekView: View {
                             .foregroundColor(Theme.text)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 2)
 
                 ScrollView(.vertical) {
                     ZStack(alignment: .topLeading) {
@@ -248,7 +251,7 @@ private struct WeekView: View {
                                     Rectangle()
                                         .fill(Color.gray.opacity(0.3))
                                         .frame(height: 0.5)
-                                        .offset(y: rowHeight - 0.5)
+                                        .offset(y: rowHeight)
                                 }
                                 .frame(width: hoursWidth, height: rowHeight, alignment: .topLeading)
                             }
