@@ -33,6 +33,8 @@ public struct CalendarPage: View {
                             Text(p).tag(String?.some(p))
                         }
                     }
+                    DatePicker("", selection: $selectedDate, displayedComponents: .date)
+                        .labelsHidden()
                 }
                 .padding(.horizontal)
 
@@ -77,21 +79,30 @@ private struct DayTimelineView: View {
     var date: Date
     var events: [PlannerEvent]
     var body: some View {
-        List {
-            ForEach(0..<24, id: \.self) { hr in
-                let hourEvents = events.filter { Calendar.current.component(.hour, from: $0.start) == hr }
-                Section(header: Text("\(hr):00").foregroundColor(Theme.text)) {
-                    ForEach(hourEvents) { ev in
-                        VStack(alignment: .leading) {
-                            Text(ev.title).foregroundColor(Theme.text).font(.headline)
-                            Text("\(ev.start.formatted(date: .omitted, time: .shortened)) - \(ev.end.formatted(date: .omitted, time: .shortened))")
-                                .foregroundColor(Theme.textMuted).font(.caption)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(0..<24, id: \.self) { hr in
+                    let hourEvents = events.filter { Calendar.current.component(.hour, from: $0.start) == hr }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(hr):00")
+                            .foregroundColor(Theme.text)
+                            .font(.caption)
+                        ForEach(hourEvents) { ev in
+                            VStack(alignment: .leading) {
+                                Text(ev.title).foregroundColor(Theme.text).font(.headline)
+                                Text("\(ev.start.formatted(date: .omitted, time: .shortened)) - \(ev.end.formatted(date: .omitted, time: .shortened))")
+                                    .foregroundColor(Theme.textMuted).font(.caption)
+                            }
                         }
+                        Spacer()
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(4)
+                    .frame(height: 60, alignment: .top)
+                    .border(Color.gray.opacity(0.3), width: 0.5)
                 }
             }
         }
-        .listStyle(.plain)
     }
 }
 
@@ -100,25 +111,50 @@ private struct WeekView: View {
     var events: [PlannerEvent]
     var tag: String?
     var project: String?
+    private let dayFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "E dd"; return f
+    }()
     var body: some View {
         let week = weekDates(containing: selectedDate)
-        let groups = stride(from: 0, to: week.count, by: 3).map { Array(week[$0..<min($0 + 3, week.count)]) }
-        TabView {
-            ForEach(groups, id: \.self) { group in
-                HStack(spacing: 0) {
-                    ForEach(group, id: \.self) { day in
-                        DayTimelineView(date: day,
-                                        events: eventsFor(day: day))
-                            .frame(width: UIScreen.main.bounds.width / 3)
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                ForEach(week, id: \.self) { day in
+                    Text(dayFormatter.string(from: day))
+                        .frame(maxWidth: .infinity)
+                        .foregroundColor(Theme.text)
+                }
+            }
+            .padding(.vertical, 4)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(0..<24, id: \.self) { hr in
+                        HStack(spacing: 0) {
+                            ForEach(week, id: \.self) { day in
+                                let evs = eventsFor(day: day, hour: hr)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    ForEach(evs) { ev in
+                                        Text(ev.title)
+                                            .font(.caption)
+                                            .foregroundColor(Theme.text)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    Spacer()
+                                }
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                .padding(4)
+                                .border(Color.gray.opacity(0.3), width: 0.5)
+                                .frame(height: 60)
+                            }
+                        }
                     }
                 }
             }
         }
-        .tabViewStyle(.page(indexDisplayMode: .automatic))
     }
-    private func eventsFor(day: Date) -> [PlannerEvent] {
-        let store = EventStore(); store.events = events
-        return store.events(for: day).filter { ev in
+    private func eventsFor(day: Date, hour: Int) -> [PlannerEvent] {
+        let cal = Calendar.current
+        return events.filter { ev in
+            cal.isDate(ev.start, inSameDayAs: day) && cal.component(.hour, from: ev.start) == hour &&
             (tag == nil || ev.tag == tag) && (project == nil || ev.project == project)
         }
     }
