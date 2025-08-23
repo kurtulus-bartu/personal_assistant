@@ -22,15 +22,52 @@ public final class SupabaseService {
         return req
     }
     public func fetchEvents() async throws -> [PlannerEvent] {
-        guard let req = request(path: "events?select=*", method: "GET") else { return [] }
+        let fields = "id,title,status,start_ts,end_ts,tag:tags(name),project:projects(name)"
+        let path = "tasks?select=\(fields)&has_time=eq.true"
+        guard let req = request(path: path, method: "GET") else { return [] }
         let (data, _) = try await URLSession.shared.data(for: req)
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
-        return try dec.decode([PlannerEvent].self, from: data)
+        struct TaskRow: Codable {
+            let id: Int
+            let title: String
+            let status: String?
+            let start_ts: Date
+            let end_ts: Date
+            let tag: NameHolder?
+            let project: NameHolder?
+            struct NameHolder: Codable { let name: String }
+        }
+        let rows = try dec.decode([TaskRow].self, from: data)
+        return rows.map { r in
+            PlannerEvent(id: r.id,
+                         title: r.title,
+                         start: r.start_ts,
+                         end: r.end_ts,
+                         status: r.status,
+                         tag: r.tag?.name,
+                         project: r.project?.name)
+        }
     }
     public func upsertEvents(_ items: [PlannerEvent]) async throws {
+        struct UpsertTask: Codable {
+            var id: Int?
+            var title: String
+            var status: String?
+            var has_time: Bool
+            var start_ts: Date
+            var end_ts: Date
+        }
+        let rows = items.map { ev in
+            UpsertTask(id: ev.id,
+                       title: ev.title,
+                       status: ev.status,
+                       has_time: true,
+                       start_ts: ev.start,
+                       end_ts: ev.end)
+        }
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
-        let data = try enc.encode(items)
-        if let req = request(path: "events", body: data) {
+        let data = try enc.encode(rows)
+        if let req = request(path: "tasks?on_conflict=id", body: data) {
             _ = try await URLSession.shared.data(for: req)
         }
     }
