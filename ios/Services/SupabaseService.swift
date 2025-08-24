@@ -73,7 +73,7 @@ public final class SupabaseService {
     }
     public func fetchTasks() async throws -> [PlannerTask] {
         // start_ts ve has_time da gelsin
-        let fields = "id,title,status,tag:tags(name),project:projects(name),start_ts,has_time"
+        let fields = "id,title,status,tag_id,tag:tags(name),project_id,project:projects(name),due_date,start_ts,has_time"
         // Zamansız: has_time=false  veya  (has_time is null AND start_ts is null)
         let filter = "or=(has_time.eq.false,and(has_time.is.null,start_ts.is.null))"
         let path = "tasks?select=\(fields)&\(filter)"
@@ -84,19 +84,28 @@ public final class SupabaseService {
             let id: Int
             let title: String
             let status: String?
+            let tag_id: Int?
             let tag: NameHolder?
+            let project_id: Int?
             let project: NameHolder?
+            let due_date: String?
             let start_ts: Date?
             let has_time: Bool?
             struct NameHolder: Codable { let name: String }
         }
         let rows = try dec.decode([TaskRow].self, from: data)
+        let df = ISO8601DateFormatter()
+        df.formatOptions = [.withFullDate]
         return rows.map { r in
-            PlannerTask(id: r.id,
-                        title: r.title,
-                        status: r.status,
-                        tag: r.tag?.name,
-                        project: r.project?.name)
+            let due = r.due_date.flatMap { df.date(from: $0) }
+            return PlannerTask(id: r.id,
+                               title: r.title,
+                               status: r.status,
+                               tagId: r.tag_id,
+                               tag: r.tag?.name,
+                               projectId: r.project_id,
+                               project: r.project?.name,
+                               due: due)
         }
     }
     public func upsertTasks(_ items: [PlannerTask]) async throws {
@@ -105,12 +114,20 @@ public final class SupabaseService {
             var title: String
             var status: String?
             var has_time: Bool
+            var tag_id: Int?
+            var project_id: Int?
+            var due_date: String?
         }
+        let df = ISO8601DateFormatter()
+        df.formatOptions = [.withFullDate]
         let rows = items.map { t in
             UpsertTask(id: t.id,
                        title: t.title,
                        status: t.status,
-                       has_time: false)
+                       has_time: false,
+                       tag_id: t.tagId,
+                       project_id: t.projectId,
+                       due_date: t.due.map { df.string(from: $0) })
         }
         let data = try JSONEncoder().encode(rows)
         if let req = request(path: "tasks?on_conflict=id", body: data) {
