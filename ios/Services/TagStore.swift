@@ -29,4 +29,12 @@ public final class TagStore: ObservableObject {
             }
         }
     }
+
+    public func backupToSupabase() async {
+        try? await SupabaseService.shared.upsertTags(tags)
+    }
+
+    public func replaceSupabaseWithLocal() async {
+        try? await SupabaseService.shared.replaceTags(tags)
+    }
 }

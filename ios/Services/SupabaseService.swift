@@ -33,12 +33,52 @@ public final class SupabaseService {
         return try dec.decode([PlannerTag].self, from: data)
     }
 
+    public func upsertTags(_ items: [PlannerTag]) async throws {
+        struct Row: Codable { var id: Int; var name: String }
+        let rows = items.map { Row(id: $0.id, name: $0.name) }
+        let data = try JSONEncoder().encode(rows)
+        if let req = request(path: "tags?on_conflict=id", body: data) {
+            _ = try await URLSession.shared.data(for: req)
+        }
+    }
+
+    public func deleteAllTags() async throws {
+        if let req = request(path: "tags", method: "DELETE") {
+            _ = try await URLSession.shared.data(for: req)
+        }
+    }
+
+    public func replaceTags(_ items: [PlannerTag]) async throws {
+        try await deleteAllTags()
+        try await upsertTags(items)
+    }
+
     // MARK: Projects
     public func fetchProjects() async throws -> [PlannerProject] {
         guard let req = request(path: "projects?select=*", method: "GET") else { return [] }
         let (data, _) = try await URLSession.shared.data(for: req)
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
         return try dec.decode([PlannerProject].self, from: data)
+    }
+
+    public func upsertProjects(_ items: [PlannerProject]) async throws {
+        struct Row: Codable { var id: Int; var name: String; var tag_id: Int? }
+        let rows = items.map { Row(id: $0.id, name: $0.name, tag_id: $0.tagId) }
+        let data = try JSONEncoder().encode(rows)
+        if let req = request(path: "projects?on_conflict=id", body: data) {
+            _ = try await URLSession.shared.data(for: req)
+        }
+    }
+
+    public func deleteAllProjects() async throws {
+        if let req = request(path: "projects", method: "DELETE") {
+            _ = try await URLSession.shared.data(for: req)
+        }
+    }
+
+    public func replaceProjects(_ items: [PlannerProject]) async throws {
+        try await deleteAllProjects()
+        try await upsertProjects(items)
     }
 
     // MARK: Events
@@ -197,6 +237,11 @@ public final class SupabaseService {
     public func replaceEvents(_ items: [PlannerEvent]) async throws {
         try await deleteAllEvents()
         try await upsertEvents(items)
+    }
+
+    public func deleteAllTaskRows() async throws {
+        try await deleteAllEvents()
+        try await deleteAllTasks()
     }
 
     // MARK: Other

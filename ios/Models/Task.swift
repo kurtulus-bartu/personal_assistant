@@ -1,5 +1,11 @@
 import Foundation
 
+private func makeId() -> Int {
+    let ms = Int(Date().timeIntervalSince1970 * 1000)
+    let r  = Int.random(in: 0..<1000)
+    return ms * 1000 + r
+}
+
 public struct PlannerTask: Identifiable, Codable, Hashable {
     public var id: Int
     public var title: String
@@ -13,23 +19,20 @@ public struct PlannerTask: Identifiable, Codable, Hashable {
     public var start: Date?
     public var end: Date?
     public var hasTime: Bool?
-    private static func makeId() -> Int {
-        let ms = Int(Date().timeIntervalSince1970 * 1000)
-        let rand = Int.random(in: 0..<1000)
-        return ms * 1000 + rand
-    }
-    public init(id: Int = Self.makeId(),
-                title: String,
-                notes: String? = nil,
-                status: String? = nil,
-                tagId: Int? = nil,
-                tag: String? = nil,
-                projectId: Int? = nil,
-                project: String? = nil,
-                due: Date? = nil,
-                start: Date? = nil,
-                end: Date? = nil,
-                hasTime: Bool? = nil) {
+    public init(
+        id: Int = makeId(),
+        title: String,
+        notes: String? = nil,
+        status: String? = nil,
+        tagId: Int? = nil,
+        tag: String? = nil,
+        projectId: Int? = nil,
+        project: String? = nil,
+        due: Date? = nil,
+        start: Date? = nil,
+        end: Date? = nil,
+        hasTime: Bool? = nil
+    ) {
         self.id = id
         self.title = title
         self.notes = notes
