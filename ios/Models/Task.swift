@@ -15,6 +15,8 @@ public struct PlannerTask: Identifiable, Codable, Hashable {
     public var tag: String?
     public var projectId: Int?
     public var project: String?
+    public var parentId: Int?
+    public var parent: String?
     public var due: Date?
     public var start: Date?
     public var end: Date?
@@ -28,6 +30,8 @@ public struct PlannerTask: Identifiable, Codable, Hashable {
         tag: String? = nil,
         projectId: Int? = nil,
         project: String? = nil,
+        parentId: Int? = nil,
+        parent: String? = nil,
         due: Date? = nil,
         start: Date? = nil,
         end: Date? = nil,
@@ -41,6 +45,8 @@ public struct PlannerTask: Identifiable, Codable, Hashable {
         self.tag = tag
         self.projectId = projectId
         self.project = project
+        self.parentId = parentId
+        self.parent = parent
         self.due = due
         self.start = start
         self.end = end

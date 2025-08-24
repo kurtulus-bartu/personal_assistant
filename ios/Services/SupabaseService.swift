@@ -147,7 +147,7 @@ public final class SupabaseService {
 
     // MARK: Tasks
     public func fetchTasks() async throws -> [PlannerTask] {
-        let fields = "id,title,notes,status,tag_id,tag:tags(name),project_id,project:projects(name),has_time,due_date,start_ts,end_ts"
+        let fields = "id,title,notes,status,tag_id,tag:tags(name),project_id,project:projects(name),parent_id,parent:tasks!tasks_parent_id_fkey(title),has_time,due_date,start_ts,end_ts"
         let filter = "or=(has_time.eq.false,and(has_time.is.null,start_ts.is.null))"
         let path = "tasks?select=\(fields)&\(filter)"
         guard let req = request(path: path, method: "GET") else { return [] }
@@ -162,6 +162,8 @@ public final class SupabaseService {
             let tag: NameHolder?
             let project_id: Int?
             let project: NameHolder?
+            let parent_id: Int?
+            let parent: NameHolder?
             let has_time: Bool?
             let due_date: String?
             let start_ts: Date?
@@ -180,6 +182,8 @@ public final class SupabaseService {
                                tag: r.tag?.name,
                                projectId: r.project_id,
                                project: r.project?.name,
+                               parentId: r.parent_id,
+                               parent: r.parent?.name,
                                due: due,
                                start: r.start_ts,
                                end: r.end_ts,
@@ -195,6 +199,7 @@ public final class SupabaseService {
             var has_time: Bool
             var tag_id: Int?
             var project_id: Int?
+            var parent_id: Int?
             var due_date: String?
             var start_ts: Date?
             var end_ts: Date?
@@ -208,6 +213,7 @@ public final class SupabaseService {
                        has_time: t.hasTime ?? false,
                        tag_id: t.tagId,
                        project_id: t.projectId,
+                       parent_id: t.parentId,
                        due_date: t.due.map { df.string(from: $0) },
                        start_ts: t.start,
                        end_ts: t.end)
