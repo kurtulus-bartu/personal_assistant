@@ -67,18 +67,19 @@ public struct CalendarPage: View {
                     ZStack {
                         Text("Takvim").font(.headline)
                         HStack {
-                            Button("Kanban") { showKanban = true }
-                            Spacer()
-                            Button(action: {
-                                Task {
-                                    await taskStore.replaceSupabaseWithLocal()
-                                    await taskStore.syncFromSupabase()
-                                    await store.syncFromSupabase()
-                                }
-                            }) {
-                                Image(systemName: "arrow.clockwise")
-                            }
-                        }
+                              Button("Kanban") { showKanban = true }
+                              Spacer()
+                              Button(action: {
+                                  Task {
+                                      await taskStore.replaceSupabaseWithLocal()
+                                      await store.replaceSupabaseWithLocal()
+                                      await taskStore.syncFromSupabase()
+                                      await store.syncFromSupabase()
+                                  }
+                              }) {
+                                  Image(systemName: "arrow.clockwise")
+                              }
+                          }
                     }
                     .frame(maxWidth: .infinity)
                 }
