@@ -118,13 +118,23 @@ public final class SupabaseService {
         }
     }
     public func deleteAllTasks() async throws {
-        if let req = request(path: "tasks?id=gt.0", method: "DELETE") {
+        let filter = "or=(has_time.eq.false,and(has_time.is.null,start_ts.is.null))"
+        if let req = request(path: "tasks?\(filter)", method: "DELETE") {
             _ = try await URLSession.shared.data(for: req)
         }
     }
     public func replaceTasks(_ items: [PlannerTask]) async throws {
         try await deleteAllTasks()
         try await upsertTasks(items)
+    }
+    public func deleteAllEvents() async throws {
+        if let req = request(path: "tasks?has_time=eq.true", method: "DELETE") {
+            _ = try await URLSession.shared.data(for: req)
+        }
+    }
+    public func replaceEvents(_ items: [PlannerEvent]) async throws {
+        try await deleteAllEvents()
+        try await upsertEvents(items)
     }
     public func uploadWeeklyEnergy(userId: String, items: [DayEnergy]) async {
         let rows: [[String: Any]] = items.map { [
