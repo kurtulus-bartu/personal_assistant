@@ -1,76 +1,121 @@
 import SwiftUI
+import UniformTypeIdentifiers
+
+private struct TaskCard: View {
+    var task: PlannerTask
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title)
+                    .foregroundColor(Theme.text)
+                if let meta = metaText {
+                    Text(meta)
+                        .font(.footnote)
+                        .foregroundColor(Theme.textMuted)
+                }
+            }
+            Spacer()
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.secondaryBG)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+    private var metaText: String? {
+        var parts: [String] = []
+        if let tag = task.tag { parts.append(tag) }
+        if let project = task.project { parts.append(project) }
+        return parts.isEmpty ? nil : parts.joined(separator: " > ")
+    }
+}
 
 private struct KanbanColumn: View {
     var title: String
+    var status: String
     var tasks: [PlannerTask]
+    var onDropTask: (Int) -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .foregroundColor(Theme.text)
                 .font(.headline)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(tasks) { task in
-                        Text(task.title)
-                            .padding(8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Theme.secondaryBG)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .foregroundColor(Theme.text)
-                    }
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(tasks) { task in
+                    TaskCard(task: task)
+                        .onDrag { NSItemProvider(object: String(task.id) as NSString) }
                 }
             }
-            .scrollIndicators(.hidden)
-            .frame(maxHeight: 200)
+            .onDrop(of: [.text]) { providers in
+                handleDrop(providers)
+            }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.primaryBG)
     }
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first else { return false }
+        provider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { item, _ in
+            if let data = item as? Data,
+               let str = String(data: data, encoding: .utf8),
+               let id = Int(str) {
+                DispatchQueue.main.async { onDropTask(id) }
+            }
+        }
+        return true
+    }
 }
 
 public struct KanbanPage: View {
     @StateObject private var store = TaskStore()
-    @State private var selectedTag: String?
-    @State private var selectedProject: String?
     public init() {}
     public var body: some View {
         VStack {
-            HStack {
-                Picker("Tag", selection: $selectedTag) {
-                    Text("Tümü").tag(String?.none)
-                    ForEach(Array(Set(store.tasks.compactMap { $0.tag })), id: \.self) { t in
-                        Text(t).tag(String?.some(t))
-                    }
-                }
-                Picker("Proje", selection: $selectedProject) {
-                    Text("Tümü").tag(String?.none)
-                    ForEach(Array(Set(store.tasks.compactMap { $0.project })), id: \.self) { p in
-                        Text(p).tag(String?.some(p))
-                    }
-        }
-    }
-            .padding()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    KanbanColumn(title: "Yapılacak", tasks: filtered(status: "todo"))
-                    KanbanColumn(title: "Yapılıyor", tasks: filtered(status: "doing"))
-                    KanbanColumn(title: "Bitti", tasks: filtered(status: "done"))
+                    KanbanColumn(title: "Yapılacak", status: "todo",
+                                 tasks: filtered(status: "todo"),
+                                 onDropTask: { moveTask($0, to: "todo") })
+                    KanbanColumn(title: "Yapılıyor", status: "doing",
+                                 tasks: filtered(status: "doing"),
+                                 onDropTask: { moveTask($0, to: "doing") })
+                    KanbanColumn(title: "Bitti", status: "done",
+                                 tasks: filtered(status: "done"),
+                                 onDropTask: { moveTask($0, to: "done") })
                 }
                 .padding(.horizontal)
             }
             .scrollIndicators(.hidden)
-            .refreshable { await store.syncFromSupabase() }
+            .refreshable {
+                await store.backupToSupabase()
+                await store.syncFromSupabase()
+            }
+
+            Button(action: {
+                // TODO: Görev ekleme
+            }) {
+                Text("Görev Ekle")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Theme.accent)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .padding()
         }
         .task { await store.syncFromSupabase() }
         .background(Theme.primaryBG.ignoresSafeArea())
     }
+
     private func filtered(status: String) -> [PlannerTask] {
-        store.tasks.filter { task in
-            let st = normalizeStatus(task.status)
-            return st == status &&
-                (selectedTag == nil || task.tag == selectedTag) &&
-                (selectedProject == nil || task.project == selectedProject)
+        store.tasks.filter { normalizeStatus($0.status) == status }
+    }
+
+    private func moveTask(_ id: Int, to status: String) {
+        if let idx = store.tasks.firstIndex(where: { $0.id == id }) {
+            store.tasks[idx].status = status
+            store.save()
+            Task { await store.backupToSupabase() }
         }
     }
 
