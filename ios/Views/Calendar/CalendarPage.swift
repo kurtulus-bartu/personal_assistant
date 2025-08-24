@@ -69,8 +69,23 @@ public struct CalendarPage: View {
                     ZStack {
                         Text("Takvim").font(.headline)
                         HStack {
-                              Button("Kanban") { showKanban = true }
+                              Button(action: { showKanban = true }) {
+                                  Image(systemName: "square.grid.2x2")
+                              }
                               Spacer()
+                              Button(action: {
+                                  Task {
+                                      await SyncOrchestrator.initialPull(tags: tagStore,
+                                                                         projects: projectStore,
+                                                                         tasks: taskStore,
+                                                                         events: store)
+                                      let vm = HealthDashboardVM(weightStore: WeightStore())
+                                      await vm.requestAuth()
+                                      await vm.refresh()
+                                  }
+                              }) {
+                                  Image(systemName: "arrow.down.circle")
+                              }
                               Button(action: {
                                   Task {
                                       await taskStore.backupToSupabase()

@@ -10,13 +10,19 @@ private struct TaskCard: View {
     }()
     var body: some View {
         HStack {
-            Text(titleWithMeta)
-                .foregroundColor(Theme.text)
+            HStack(spacing: 0) {
+                Text(task.title)
+                    .foregroundColor(Theme.text)
+                if let meta = metaText {
+                    Text(" (\(meta))")
+                        .foregroundColor(Theme.textMuted)
+                }
+            }
             Spacer()
             if let due = task.due {
                 Text(Self.df.string(from: due))
                     .font(.footnote)
-                    .foregroundColor(Theme.textMuted)
+                    .foregroundColor(Theme.text)
             }
         }
         .padding(8)
@@ -24,13 +30,12 @@ private struct TaskCard: View {
         .background(Theme.secondaryBG)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
-    private var titleWithMeta: String {
+    private var metaText: String? {
         var parts: [String] = []
         if let tag = task.tag { parts.append(tag) }
         if let project = task.project { parts.append(project) }
         if let parent = task.parent { parts.append(parent) }
-        let meta = parts.isEmpty ? "" : " (" + parts.joined(separator: " > ") + ")"
-        return task.title + meta
+        return parts.isEmpty ? nil : parts.joined(separator: " > ")
     }
 }
 
