@@ -19,8 +19,6 @@ public struct CalendarPage: View {
                         ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                    .padding(.top, 2)
 
                     HStack {
                         Picker("Tag", selection: $selectedTag) {
@@ -38,8 +36,15 @@ public struct CalendarPage: View {
                         DatePicker("", selection: $selectedDate, displayedComponents: .date)
                             .labelsHidden()
                     }
-                    .padding(.horizontal)
                 }
+                .padding(8)
+                .background(Theme.primaryBG)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Theme.accent, lineWidth: 1)
+                )
+                .padding(.horizontal)
+                .padding(.top, 2)
 
                 let H: CGFloat = 16
                 if mode == .week {
@@ -55,19 +60,13 @@ public struct CalendarPage: View {
                     .padding(.horizontal, H)
                     .environmentObject(store)
                 }
-
-                Button("Kanban") { showKanban = true }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Theme.secondaryBG)
-                    .foregroundColor(Theme.text)
-                    .padding([.horizontal, .bottom])
             }
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     ZStack {
                         Text("Takvim").font(.headline)
                         HStack {
+                            Button("Kanban") { showKanban = true }
                             Spacer()
                             Button(action: { Task { await store.syncFromSupabase() } }) {
                                 Image(systemName: "arrow.clockwise")
@@ -93,6 +92,7 @@ public struct CalendarPage: View {
 
 private struct DayColumnView: View {
     @EnvironmentObject var store: EventStore
+    @Environment(\.displayScale) private var scale
     let day: Date
     let allEvents: [PlannerEvent]
     var tag: String?
@@ -100,14 +100,32 @@ private struct DayColumnView: View {
     var dayWidth: CGFloat? = nil
     let rowHeight: CGFloat
     @Binding var isDragging: Bool
-    @GestureState private var isPressing = false
+    @State private var draggedEventId: Int? = nil
+    @State private var resizingEventId: Int? = nil
+    private var onePx: CGFloat { 1 / scale }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            Color.clear
+                .frame(minHeight: rowHeight * 24)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in
+                            if draggedEventId != nil || resizingEventId != nil {
+                                isDragging = false
+                                draggedEventId = nil
+                                resizingEventId = nil
+                            }
+                        }
+                )
+
             ForEach(orderedEvents) { ev in
                 let y = yOffset(for: ev.start)
                 let h = height(for: ev)
                 let isSmall = isSmallestInCluster(ev, in: filteredEvents)
+                let isDraggedEvent = draggedEventId == ev.id || resizingEventId == ev.id
+
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isSmall ? Theme.accentBG : Theme.secondaryBG)
                     .overlay(alignment: .topLeading) {
@@ -124,14 +142,32 @@ private struct DayColumnView: View {
                         .padding(6)
                         .allowsHitTesting(false)
                     }
+                    .overlay(alignment: .top) {
+                        Rectangle()
+                            .fill(Theme.primaryBG)
+                            .frame(height: 6)
+                            .overlay(Rectangle().stroke(Theme.accent, lineWidth: onePx))
+                    }
+                    .overlay(alignment: .bottom) {
+                        Rectangle()
+                            .fill(Theme.primaryBG)
+                            .frame(height: 6)
+                            .overlay(Rectangle().stroke(Theme.accent, lineWidth: onePx))
+                            .highPriorityGesture(resizeGesture(ev))
+                    }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Theme.accent, lineWidth: onePx)
+                    )
                     .frame(height: max(h, 24))
                     .offset(y: y)
-                    .contentShape(Rectangle())
-                    .zIndex(stackZIndex(for: ev))
-                    .gesture(dragGesturePickAndMove(ev))
+                    .zIndex(isDraggedEvent ? 10.0 : (isSmall ? 2.0 : 0.0))
+                    .scaleEffect(isDraggedEvent ? 1.02 : 1.0)
+                    .gesture(moveGesture(ev))
             }
         }
         .frame(minHeight: rowHeight * 24, alignment: .top)
+        .clipped()
     }
 
     private var filteredEvents: [PlannerEvent] {
@@ -151,18 +187,6 @@ private struct DayColumnView: View {
         }
     }
 
-    private func stackZIndex(for ev: PlannerEvent) -> Double {
-        let cluster = filteredEvents.filter { overlaps($0, ev) }
-        guard cluster.count > 1 else { return 1 }
-        let ordered = cluster.sorted {
-            if durationMin($0) != durationMin($1) { return durationMin($0) < durationMin($1) }
-            if $0.start != $1.start { return $0.start > $1.start }
-            return $0.id > $1.id
-        }
-        let idx = ordered.firstIndex(where: { $0.id == ev.id }) ?? 0
-        return 1000 + Double(idx)
-    }
-
     private func yOffset(for start: Date) -> CGFloat {
         let comps = Calendar.current.dateComponents([.hour, .minute], from: start)
         let h = CGFloat(comps.hour ?? 0)
@@ -177,9 +201,11 @@ private struct DayColumnView: View {
     private func durationMin(_ ev: PlannerEvent) -> Int {
         Int(ev.end.timeIntervalSince(ev.start) / 60)
     }
+
     private func overlaps(_ a: PlannerEvent, _ b: PlannerEvent) -> Bool {
         a.start < b.end && b.start < a.end
     }
+
     private func isSmallestInCluster(_ ev: PlannerEvent, in events: [PlannerEvent]) -> Bool {
         let cluster = events.filter { overlaps($0, ev) }
         guard cluster.count > 1 else { return false }
@@ -187,22 +213,26 @@ private struct DayColumnView: View {
         return durationMin(ev) == minDur
     }
 
-    private func dragGesturePickAndMove(_ ev: PlannerEvent) -> some Gesture {
-        let press = LongPressGesture(minimumDuration: 0.05)
-            .updating($isPressing) { value, state, _ in
-                if value { state = true }
+    private func moveGesture(_ ev: PlannerEvent) -> some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { value in
+                if draggedEventId == nil && resizingEventId == nil {
+                    isDragging = true
+                    draggedEventId = ev.id
+                }
             }
+            .onEnded { value in
+                guard draggedEventId == ev.id else { return }
 
-        let drag = DragGesture(minimumDistance: 6)
+                defer {
+                    isDragging = false
+                    draggedEventId = nil
+                }
 
-        return press.sequenced(before: drag)
-            .onChanged { seq in
-                if case .second(true, _) = seq { isDragging = true }
-            }
-            .onEnded { seq in
-                defer { isDragging = false }
-                guard case let .second(true, drag?) = seq else { return }
-                let minutes = (drag.translation.height / rowHeight) * 60.0
+                let totalMovement = sqrt(value.translation.width * value.translation.width + value.translation.height * value.translation.height)
+                guard totalMovement > 8 else { return }
+
+                let minutes = (value.translation.height / rowHeight) * 60.0
                 func snap(_ d: Date) -> Date {
                     let m = Int(minutes.rounded())
                     let s = (m / 15) * 15
@@ -212,7 +242,7 @@ private struct DayColumnView: View {
                 var newEnd = snap(ev.end)
 
                 if let dw = dayWidth {
-                    let dShift = Int((drag.translation.width / dw).rounded())
+                    let dShift = Int((value.translation.width / dw).rounded())
                     if dShift != 0 {
                         newStart = Calendar.current.date(byAdding: .day, value: dShift, to: newStart)!
                         newEnd = Calendar.current.date(byAdding: .day, value: dShift, to: newEnd)!
@@ -221,6 +251,38 @@ private struct DayColumnView: View {
 
                 if let idx = store.events.firstIndex(where: { $0.id == ev.id }) {
                     store.events[idx].start = newStart
+                    store.events[idx].end = newEnd
+                    store.save()
+                    Task { await store.backupToSupabase() }
+                }
+            }
+    }
+
+    private func resizeGesture(_ ev: PlannerEvent) -> some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { _ in
+                if resizingEventId == nil && draggedEventId == nil {
+                    isDragging = true
+                    resizingEventId = ev.id
+                }
+            }
+            .onEnded { value in
+                guard resizingEventId == ev.id else { return }
+
+                defer {
+                    isDragging = false
+                    resizingEventId = nil
+                }
+
+                let minutes = (value.translation.height / rowHeight) * 60.0
+                let m = Int(minutes.rounded())
+                let s = (m / 15) * 15
+                var newEnd = Calendar.current.date(byAdding: .minute, value: s, to: ev.end)!
+                if newEnd <= ev.start {
+                    newEnd = Calendar.current.date(byAdding: .minute, value: 15, to: ev.start)!
+                }
+
+                if let idx = store.events.firstIndex(where: { $0.id == ev.id }) {
                     store.events[idx].end = newEnd
                     store.save()
                     Task { await store.backupToSupabase() }
