@@ -88,16 +88,18 @@ public struct CalendarPage: View {
                               }
                               Button(action: {
                                   Task {
-                                      // Foreign key bütünlüğü için önce tag ve projeler, sonra görevler ve etkinlikler
-                                      await tagStore.backupToSupabase()
-                                      await projectStore.backupToSupabase()
-                                      await taskStore.backupToSupabase()
-                                      await store.backupToSupabase()
-                                      // Çekme sırasını da aynı mantıkla koru
-                                      await tagStore.syncFromSupabase()
-                                      await projectStore.syncFromSupabase()
-                                      await taskStore.syncFromSupabase()
-                                      await store.syncFromSupabase()
+                                      await SyncOrchestrator.replaceRemoteWithLocal(
+                                          tags: tagStore,
+                                          projects: projectStore,
+                                          tasks: taskStore,
+                                          events: store
+                                      )
+                                      await SyncOrchestrator.initialPull(
+                                          tags: tagStore,
+                                          projects: projectStore,
+                                          tasks: taskStore,
+                                          events: store
+                                      )
                                   }
                               }) {
                                   Image(systemName: "arrow.clockwise")
