@@ -6,7 +6,24 @@ public final class ProjectStore: ObservableObject {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         return dir.appendingPathComponent("projects.json")
     }()
-    public init() { load() }
+    public init() {
+        load()
+        setupNotifications()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    private func setupNotifications() {
+        NotificationCenter.default.addObserver(
+            forName: .dataDidSync,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+    }
 
     public func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
@@ -18,6 +35,10 @@ public final class ProjectStore: ObservableObject {
     public func save() {
         if let data = try? JSONEncoder().encode(projects) {
             try? data.write(to: fileURL)
+        }
+
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .projectsDidUpdate, object: self)
         }
     }
 
@@ -31,6 +52,7 @@ public final class ProjectStore: ObservableObject {
         } catch {
             await MainActor.run {
                 print("fetchProjects failed:", error.localizedDescription)
+                SyncStatusManager.shared.finishRefresh(error: error.localizedDescription)
             }
         }
     }

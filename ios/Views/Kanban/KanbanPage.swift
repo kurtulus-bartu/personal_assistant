@@ -46,9 +46,19 @@ private struct KanbanColumn: View {
     var onDropTask: (Int) -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .foregroundColor(Theme.text)
-                .font(.headline)
+            HStack {
+                Text(title)
+                    .foregroundColor(Theme.text)
+                    .font(.headline)
+                Spacer()
+                Text("\(tasks.count)")
+                    .foregroundColor(Theme.textMuted)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Theme.primaryBG)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(tasks) { task in
@@ -86,10 +96,101 @@ private struct KanbanColumn: View {
 }
 
 public struct KanbanPage: View {
-    @ObservedObject var store: TaskStore
-    public init(store: TaskStore) { self.store = store }
+    @ObservedObject var taskStore: TaskStore
+    @ObservedObject var tagStore: TagStore
+    @ObservedObject var projectStore: ProjectStore
+    @State private var selectedTag: String?
+    @State private var selectedProject: String?
+    @State private var showingAddTask = false
+    @State private var isRefreshing = false
+    
+    public init(taskStore: TaskStore, tagStore: TagStore, projectStore: ProjectStore) {
+        self.taskStore = taskStore
+        self.tagStore = tagStore
+        self.projectStore = projectStore
+    }
+    
     public var body: some View {
         VStack {
+            // Filtre bölümü
+            VStack(spacing: 8) {
+                HStack {
+                    Picker("Tag", selection: $selectedTag) {
+                        Text("Tüm Tagler").tag(String?.none)
+                        ForEach(tagStore.tags, id: \.id) { tag in
+                            Text(tag.name).tag(String?.some(tag.name))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    
+                    Picker("Proje", selection: $selectedProject) {
+                        Text("Tüm Projeler").tag(String?.none)
+                        ForEach(projectStore.projects, id: \.id) { project in
+                            Text(project.name).tag(String?.some(project.name))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        Task {
+                            isRefreshing = true
+                            await refreshData()
+                            isRefreshing = false
+                        }
+                    }) {
+                        Image(systemName: isRefreshing ? "arrow.clockwise" : "arrow.down.circle")
+                            .rotationEffect(isRefreshing ? .degrees(360) : .degrees(0))
+                            .animation(isRefreshing ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                    }
+                    .disabled(isRefreshing)
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+                
+                if selectedTag != nil || selectedProject != nil {
+                    HStack {
+                        Text("Aktif filtreler:")
+                            .font(.caption)
+                            .foregroundColor(Theme.textMuted)
+                        if let tag = selectedTag {
+                            Text(tag)
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Theme.accent.opacity(0.2))
+                                .foregroundColor(Theme.accent)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                        if let project = selectedProject {
+                            Text(project)
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Theme.accent.opacity(0.2))
+                                .foregroundColor(Theme.accent)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                        Spacer()
+                        Button("Temizle") {
+                            selectedTag = nil
+                            selectedProject = nil
+                        }
+                        .font(.caption)
+                        .foregroundColor(Theme.accent)
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            .padding(.bottom, 8)
+            .background(Theme.primaryBG)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Theme.secondaryBG, lineWidth: 1)
+            )
+            .padding(.horizontal)
+            
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     KanbanColumn(title: "Yapılacak", status: "todo",
@@ -107,7 +208,7 @@ public struct KanbanPage: View {
             .scrollIndicators(.hidden)
 
             Button(action: {
-                // TODO: Görev ekleme
+                showingAddTask = true
             }) {
                 Text("Görev Ekle")
                     .frame(maxWidth: .infinity)
@@ -118,34 +219,178 @@ public struct KanbanPage: View {
             }
             .padding()
         }
-        .task { await store.syncFromSupabase() }
+        .task {
+            await refreshData()
+        }
+        .sheet(isPresented: $showingAddTask) {
+            AddTaskSheet(
+                taskStore: taskStore,
+                tagStore: tagStore,
+                projectStore: projectStore,
+                preSelectedTag: selectedTag,
+                preSelectedProject: selectedProject
+            )
+        }
         .background(Theme.primaryBG.ignoresSafeArea())
     }
 
     private func filtered(status: String) -> [PlannerTask] {
-        store.tasks.filter { normalizeStatus($0.status) == status }
+        taskStore.tasks.filter { task in
+            guard normalizeStatus(task.status) == status else { return false }
+            
+            if let selectedTag = selectedTag {
+                guard task.tag == selectedTag else { return false }
+            }
+            
+            if let selectedProject = selectedProject {
+                guard task.project == selectedProject else { return false }
+            }
+            
+            return true
+        }
     }
 
     private func moveTask(_ id: Int, to status: String) {
-        if let idx = store.tasks.firstIndex(where: { $0.id == id }) {
-            store.tasks[idx].status = status
-            store.save()
-            Task { await store.backupToSupabase() }
+        if let idx = taskStore.tasks.firstIndex(where: { $0.id == id }) {
+            taskStore.tasks[idx].status = status
+            taskStore.save()
+            Task { await taskStore.backupToSupabase() }
         }
     }
+    
+    private func refreshData() async {
+        await taskStore.syncFromSupabase()
+        await tagStore.syncFromSupabase()
+        await projectStore.syncFromSupabase()
+    }
 
-    // "todo" / "doing" / "done" normalizasyonu
     private func normalizeStatus(_ raw: String?) -> String {
         let s = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
-        if ["todo","to-do","to do","backlog","open","not started","not_started","new","ns","bekliyor","yapılacak"].contains(s) {
+        if ["todo","to-do","to do","backlog","open","not started","not_started","new","ns","bekliyor","yapilacak","yapılacak"].contains(s) {
             return "todo"
         }
-        if ["doing","in progress","in_progress","progress","wip","çalışılıyor","yapılıyor"].contains(s) {
+        if ["doing","in progress","in_progress","progress","wip","calisiyor","çalışıyor","yapiliyor","yapılıyor"].contains(s) {
             return "doing"
         }
-        if ["done","completed","complete","finished","bitti","closed","resolved","tamamlandı"].contains(s) {
+        if ["done","completed","complete","finished","bitti","closed","resolved","tamamlandi","tamamlandı"].contains(s) {
             return "done"
         }
         return "todo"
+    }
+}
+
+private struct AddTaskSheet: View {
+    @ObservedObject var taskStore: TaskStore
+    @ObservedObject var tagStore: TagStore
+    @ObservedObject var projectStore: ProjectStore
+    
+    @State private var title = ""
+    @State private var notes = ""
+    @State private var selectedStatus = "todo"
+    @State private var selectedTag: String?
+    @State private var selectedProject: String?
+    @State private var hasDueDate = false
+    @State private var dueDate = Date()
+    
+    var preSelectedTag: String?
+    var preSelectedProject: String?
+    
+    @Environment(\.dismiss) private var dismiss
+    
+    private let statusOptions = [
+        ("todo", "Yapılacak"),
+        ("doing", "Yapılıyor"),
+        ("done", "Bitti")
+    ]
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Görev Bilgileri") {
+                    TextField("Görev başlığı", text: $title)
+                    TextField("Notlar (isteğe bağlı)", text: $notes, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+                
+                Section("Kategori") {
+                    Picker("Durum", selection: $selectedStatus) {
+                        ForEach(statusOptions, id: \.0) { status, label in
+                            Text(label).tag(status)
+                        }
+                    }
+                    
+                    Picker("Tag", selection: $selectedTag) {
+                        Text("Tag Seçilmedi").tag(String?.none)
+                        ForEach(tagStore.tags, id: \.id) { tag in
+                            Text(tag.name).tag(String?.some(tag.name))
+                        }
+                    }
+                    
+                    Picker("Proje", selection: $selectedProject) {
+                        Text("Proje Seçilmedi").tag(String?.none)
+                        ForEach(projectStore.projects, id: \.id) { project in
+                            Text(project.name).tag(String?.some(project.name))
+                        }
+                    }
+                }
+                
+                Section("Zaman") {
+                    Toggle("Bitiş tarihi ekle", isOn: $hasDueDate)
+                    if hasDueDate {
+                        DatePicker("Bitiş tarihi", selection: $dueDate, displayedComponents: .date)
+                    }
+                }
+            }
+            .navigationTitle("Yeni Görev")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("İptal") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Kaydet") {
+                        saveTask()
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .onAppear {
+                selectedTag = preSelectedTag
+                selectedProject = preSelectedProject
+            }
+        }
+    }
+    
+    private func saveTask() {
+        let tagId = selectedTag.flatMap { tagName in
+            tagStore.tags.first { $0.name == tagName }?.id
+        }
+        
+        let projectId = selectedProject.flatMap { projectName in
+            projectStore.projects.first { $0.name == projectName }?.id
+        }
+        
+        let newTask = PlannerTask(
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+            notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes.trimmingCharacters(in: .whitespacesAndNewlines),
+            status: selectedStatus,
+            tagId: tagId,
+            tag: selectedTag,
+            projectId: projectId,
+            project: selectedProject,
+            due: hasDueDate ? dueDate : nil,
+            hasTime: false
+        )
+        
+        taskStore.tasks.append(newTask)
+        taskStore.save()
+        
+        Task {
+            await taskStore.backupToSupabase()
+        }
+        
+        dismiss()
     }
 }

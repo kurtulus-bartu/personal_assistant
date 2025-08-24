@@ -10,6 +10,8 @@ public struct CalendarPage: View {
     @State private var mode: Mode = .week
     @State private var selectedTag: String?
     @State private var selectedProject: String?
+    @State private var isRefreshing = false
+    @State private var isBackingUp = false
 
     enum Mode: String, CaseIterable { case day = "Gün", week = "Hafta" }
     public init() {}
@@ -73,58 +75,41 @@ public struct CalendarPage: View {
                                   Image(systemName: "square.grid.2x2")
                               }
                               Spacer()
-                              Button(action: {
-                                  Task {
-                                      await SyncOrchestrator.initialPull(tags: tagStore,
-                                                                         projects: projectStore,
-                                                                         tasks: taskStore,
-                                                                         events: store)
-                                      let vm = HealthDashboardVM(weightStore: WeightStore())
-                                      await vm.requestAuth()
-                                      await vm.refresh()
-                                  }
-                              }) {
-                                  Image(systemName: "arrow.down.circle")
-                              }
-                              Button(action: {
-                                  Task {
-                                      let hasAnyLocal = !tagStore.tags.isEmpty ||
-                                         !projectStore.projects.isEmpty ||
-                                         !taskStore.tasks.isEmpty ||
-                                         !store.events.isEmpty
+                            Button(action: {
+                                Task {
+                                    isRefreshing = true
+                                    await refreshFromSupabase()
+                                    isRefreshing = false
+                                }
+                            }) {
+                                Image(systemName: isRefreshing ? "arrow.clockwise" : "arrow.down.circle")
+                                    .rotationEffect(isRefreshing ? .degrees(360) : .degrees(0))
+                                    .animation(isRefreshing ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                            }
+                            .disabled(isRefreshing || isBackingUp)
 
-                                      guard hasAnyLocal else {
-                                          print("Backup cancelled: Local stores are empty, replace would wipe remote.")
-                                          return
-                                      }
-
-                                      await SyncOrchestrator.replaceRemoteWithLocal(
-                                          tags: tagStore,
-                                          projects: projectStore,
-                                          tasks: taskStore,
-                                          events: store
-                                      )
-                                      await SyncOrchestrator.initialPull(
-                                          tags: tagStore,
-                                          projects: projectStore,
-                                          tasks: taskStore,
-                                          events: store
-                                      )
-                                  }
-                              }) {
-                                  Image(systemName: "arrow.clockwise")
-                              }
-                          }
+                            Button(action: {
+                                Task {
+                                    isBackingUp = true
+                                    await backupToSupabase()
+                                    isBackingUp = false
+                                }
+                            }) {
+                                Image(systemName: isBackingUp ? "arrow.clockwise" : "arrow.up.circle")
+                                    .rotationEffect(isBackingUp ? .degrees(360) : .degrees(0))
+                                    .animation(isBackingUp ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isBackingUp)
+                            }
+                            .disabled(isRefreshing || isBackingUp)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                 }
             }
-            .sheet(isPresented: $showKanban) { KanbanPage(store: taskStore) }
+            .sheet(isPresented: $showKanban) {
+                KanbanPage(taskStore: taskStore, tagStore: tagStore, projectStore: projectStore)
+            }
             .task {
-                await tagStore.syncFromSupabase()
-                await projectStore.syncFromSupabase()
-                await taskStore.syncFromSupabase()
-                await store.syncFromSupabase()
+                await initialLoad()
             }
             .background(Theme.primaryBG.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
@@ -135,6 +120,59 @@ public struct CalendarPage: View {
             (selectedTag == nil || ev.tag == selectedTag) &&
             (selectedProject == nil || ev.project == selectedProject)
         }
+    }
+
+    // İlk yükleme - sadece local dosyalardan oku
+    private func initialLoad() async {
+        await tagStore.syncFromSupabase()
+        await projectStore.syncFromSupabase()
+        await taskStore.syncFromSupabase()
+        await store.syncFromSupabase()
+    }
+
+    // Yenile - Supabase'den çek ve local'e kaydet
+    private func refreshFromSupabase() async {
+        await SyncOrchestrator.initialPull(
+            tags: tagStore,
+            projects: projectStore,
+            tasks: taskStore,
+            events: store
+        )
+
+        // HealthKit verilerini de yenile
+        let vm = HealthDashboardVM(weightStore: WeightStore())
+        await vm.requestAuth()
+        await vm.refresh()
+    }
+
+    // Yedekle - Local'i Supabase ile tamamen yer değiştir
+    private func backupToSupabase() async {
+        // Önce local verilerin boş olmadığını kontrol et
+        let hasAnyLocalData = !tagStore.tags.isEmpty ||
+                             !projectStore.projects.isEmpty ||
+                             !taskStore.tasks.isEmpty ||
+                             !store.events.isEmpty
+
+        guard hasAnyLocalData else {
+            print("Yedekleme iptal edildi: Local veriler boş, uzaktaki veriler silinir.")
+            return
+        }
+
+        // Local verileri Supabase'e yaz (tamamen yer değiştir)
+        await SyncOrchestrator.replaceRemoteWithLocal(
+            tags: tagStore,
+            projects: projectStore,
+            tasks: taskStore,
+            events: store
+        )
+
+        // Sonrasında güncel verileri tekrar çek
+        await SyncOrchestrator.initialPull(
+            tags: tagStore,
+            projects: projectStore,
+            tasks: taskStore,
+            events: store
+        )
     }
 }
 

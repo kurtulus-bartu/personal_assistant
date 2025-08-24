@@ -6,7 +6,24 @@ public final class EventStore: ObservableObject {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         return dir.appendingPathComponent("events.json")
     }()
-    public init() { load() }
+    public init() {
+        load()
+        setupNotifications()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    private func setupNotifications() {
+        NotificationCenter.default.addObserver(
+            forName: .dataDidSync,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+    }
 
     public func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
@@ -18,6 +35,10 @@ public final class EventStore: ObservableObject {
     public func save() {
         if let data = try? JSONEncoder().encode(events) {
             try? data.write(to: fileURL)
+        }
+
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .eventsDidUpdate, object: self)
         }
     }
 
@@ -45,6 +66,7 @@ public final class EventStore: ObservableObject {
         } catch {
             await MainActor.run {
                 print("fetchEvents failed:", error.localizedDescription)
+                SyncStatusManager.shared.finishRefresh(error: error.localizedDescription)
             }
         }
     }
