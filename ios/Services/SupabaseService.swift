@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // Supabase backend configuration used by the app. The URL and anon key are
 // the same values defined in the Python `services/supabase_api.py` helper so
@@ -21,8 +24,26 @@ public final class SupabaseService {
         req.httpBody = body
         return req
     }
+
+    // MARK: Tags
+    public func fetchTags() async throws -> [PlannerTag] {
+        guard let req = request(path: "tags?select=*", method: "GET") else { return [] }
+        let (data, _) = try await URLSession.shared.data(for: req)
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        return try dec.decode([PlannerTag].self, from: data)
+    }
+
+    // MARK: Projects
+    public func fetchProjects() async throws -> [PlannerProject] {
+        guard let req = request(path: "projects?select=*", method: "GET") else { return [] }
+        let (data, _) = try await URLSession.shared.data(for: req)
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        return try dec.decode([PlannerProject].self, from: data)
+    }
+
+    // MARK: Events
     public func fetchEvents() async throws -> [PlannerEvent] {
-        let fields = "id,title,status,start_ts,end_ts,tag:tags(name),project:projects(name)"
+        let fields = "id,title,notes,status,start_ts,end_ts,tag_id,tag:tags(name),project_id,project:projects(name)"
         let path = "tasks?select=\(fields)&has_time=eq.true"
         guard let req = request(path: path, method: "GET") else { return [] }
         let (data, _) = try await URLSession.shared.data(for: req)
@@ -30,10 +51,13 @@ public final class SupabaseService {
         struct TaskRow: Codable {
             let id: Int
             let title: String
+            let notes: String?
             let status: String?
             let start_ts: Date
             let end_ts: Date
+            let tag_id: Int?
             let tag: NameHolder?
+            let project_id: Int?
             let project: NameHolder?
             struct NameHolder: Codable { let name: String }
         }
@@ -44,7 +68,10 @@ public final class SupabaseService {
                          start: r.start_ts,
                          end: r.end_ts,
                          status: r.status,
+                         notes: r.notes,
+                         tagId: r.tag_id,
                          tag: r.tag?.name,
+                         projectId: r.project_id,
                          project: r.project?.name)
         }
     }
@@ -52,18 +79,24 @@ public final class SupabaseService {
         struct UpsertTask: Codable {
             var id: Int?
             var title: String
+            var notes: String?
             var status: String?
             var has_time: Bool
             var start_ts: Date
             var end_ts: Date
+            var tag_id: Int?
+            var project_id: Int?
         }
         let rows = items.map { ev in
             UpsertTask(id: ev.id,
                        title: ev.title,
+                       notes: ev.notes,
                        status: ev.status,
                        has_time: true,
                        start_ts: ev.start,
-                       end_ts: ev.end)
+                       end_ts: ev.end,
+                       tag_id: ev.tagId,
+                       project_id: ev.projectId)
         }
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
         let data = try enc.encode(rows)
@@ -71,10 +104,10 @@ public final class SupabaseService {
             _ = try await URLSession.shared.data(for: req)
         }
     }
+
+    // MARK: Tasks
     public func fetchTasks() async throws -> [PlannerTask] {
-        // start_ts ve has_time da gelsin
-        let fields = "id,title,status,tag_id,tag:tags(name),project_id,project:projects(name),due_date,start_ts,has_time"
-        // Zamansız: has_time=false  veya  (has_time is null AND start_ts is null)
+        let fields = "id,title,notes,status,tag_id,tag:tags(name),project_id,project:projects(name),has_time,due_date,start_ts,end_ts"
         let filter = "or=(has_time.eq.false,and(has_time.is.null,start_ts.is.null))"
         let path = "tasks?select=\(fields)&\(filter)"
         guard let req = request(path: path, method: "GET") else { return [] }
@@ -83,57 +116,69 @@ public final class SupabaseService {
         struct TaskRow: Codable {
             let id: Int
             let title: String
+            let notes: String?
             let status: String?
             let tag_id: Int?
             let tag: NameHolder?
             let project_id: Int?
             let project: NameHolder?
+            let has_time: Bool?
             let due_date: String?
             let start_ts: Date?
-            let has_time: Bool?
+            let end_ts: Date?
             struct NameHolder: Codable { let name: String }
         }
         let rows = try dec.decode([TaskRow].self, from: data)
-        let df = ISO8601DateFormatter()
-        df.formatOptions = [.withFullDate]
+        let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
         return rows.map { r in
             let due = r.due_date.flatMap { df.date(from: $0) }
             return PlannerTask(id: r.id,
                                title: r.title,
+                               notes: r.notes,
                                status: r.status,
                                tagId: r.tag_id,
                                tag: r.tag?.name,
                                projectId: r.project_id,
                                project: r.project?.name,
-                               due: due)
+                               due: due,
+                               start: r.start_ts,
+                               end: r.end_ts,
+                               hasTime: r.has_time)
         }
     }
     public func upsertTasks(_ items: [PlannerTask]) async throws {
         struct UpsertTask: Codable {
             var id: Int?
             var title: String
+            var notes: String?
             var status: String?
             var has_time: Bool
             var tag_id: Int?
             var project_id: Int?
             var due_date: String?
+            var start_ts: Date?
+            var end_ts: Date?
         }
-        let df = ISO8601DateFormatter()
-        df.formatOptions = [.withFullDate]
+        let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
         let rows = items.map { t in
             UpsertTask(id: t.id,
                        title: t.title,
+                       notes: t.notes,
                        status: t.status,
-                       has_time: false,
+                       has_time: t.hasTime ?? false,
                        tag_id: t.tagId,
                        project_id: t.projectId,
-                       due_date: t.due.map { df.string(from: $0) })
+                       due_date: t.due.map { df.string(from: $0) },
+                       start_ts: t.start,
+                       end_ts: t.end)
         }
-        let data = try JSONEncoder().encode(rows)
+        let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
+        let data = try enc.encode(rows)
         if let req = request(path: "tasks?on_conflict=id", body: data) {
             _ = try await URLSession.shared.data(for: req)
         }
     }
+
     public func deleteAllTasks() async throws {
         let filter = "or=(has_time.eq.false,and(has_time.is.null,start_ts.is.null))"
         if let req = request(path: "tasks?\(filter)", method: "DELETE") {
@@ -153,17 +198,19 @@ public final class SupabaseService {
         try await deleteAllEvents()
         try await upsertEvents(items)
     }
+
+    // MARK: Other
     public func uploadWeeklyEnergy(userId: String, items: [DayEnergy]) async {
         let rows: [[String: Any]] = items.map { [
             "user_id": userId,
             "type": "activeEnergyBurned",
             "start_at": ISO8601DateFormatter().string(from: $0.date),
-            "end_at": ISO8601DateFormatter().string(from: Calendar.current.date(byAdding: .day, value: 1, to: $0.date)!),
-            "value_numeric": $0.kcal,
-            "unit": "kcal",
-        ]}
-        do { let data = try JSONSerialization.data(withJSONObject: rows)
-            if let req = request(path: "health_samples", body: data) { _ = try await URLSession.shared.data(for: req) }
-        } catch { print("Supabase upload error:", error) }
+            "value": $0.kcal,
+            "duration_sec": 86400
+        ] }
+        if let data = try? JSONSerialization.data(withJSONObject: rows),
+           let req = request(path: "health_data", body: data) {
+            _ = try? await URLSession.shared.data(for: req)
+        }
     }
 }
