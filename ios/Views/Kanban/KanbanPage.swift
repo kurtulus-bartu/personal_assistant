@@ -45,22 +45,25 @@ private struct KanbanColumn: View {
                         .onDrag { NSItemProvider(object: String(task.id) as NSString) }
                 }
             }
-            .onDrop(of: [.text], isTargeted: nil, perform: handleDrop)
+            .onDrop(of: [.text], delegate: DropHandler(onDropTask: onDropTask))
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.primaryBG)
     }
-    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first else { return false }
-        provider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { item, _ in
-            if let data = item as? Data,
-               let str = String(data: data, encoding: .utf8),
-               let id = Int(str) {
-                DispatchQueue.main.async { onDropTask(id) }
+    private struct DropHandler: DropDelegate {
+        var onDropTask: (Int) -> Void
+        func performDrop(info: DropInfo) -> Bool {
+            guard let provider = info.itemProviders(for: [.text]).first else { return false }
+            provider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { item, _ in
+                if let data = item as? Data,
+                   let str = String(data: data, encoding: .utf8),
+                   let id = Int(str) {
+                    DispatchQueue.main.async { onDropTask(id) }
+                }
             }
+            return true
         }
-        return true
     }
 }
 
