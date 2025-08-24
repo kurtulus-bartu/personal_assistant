@@ -117,6 +117,15 @@ public final class SupabaseService {
             _ = try await URLSession.shared.data(for: req)
         }
     }
+    public func deleteAllTasks() async throws {
+        if let req = request(path: "tasks?id=gt.0", method: "DELETE") {
+            _ = try await URLSession.shared.data(for: req)
+        }
+    }
+    public func replaceTasks(_ items: [PlannerTask]) async throws {
+        try await deleteAllTasks()
+        try await upsertTasks(items)
+    }
     public func uploadWeeklyEnergy(userId: String, items: [DayEnergy]) async {
         let rows: [[String: Any]] = items.map { [
             "user_id": userId,
