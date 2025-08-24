@@ -19,7 +19,7 @@ public struct PlannerEvent: Identifiable, Codable, Hashable {
     public var project: String?
 
     public init(
-        id: Int = makeId(),
+        id: Int? = nil,
         title: String,
         start: Date,
         end: Date,
@@ -30,7 +30,7 @@ public struct PlannerEvent: Identifiable, Codable, Hashable {
         projectId: Int? = nil,
         project: String? = nil
     ) {
-        self.id = id
+        self.id = id ?? makeId()
         self.title = title
         self.start = start
         self.end = end

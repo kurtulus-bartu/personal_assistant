@@ -20,7 +20,7 @@ public struct PlannerTask: Identifiable, Codable, Hashable {
     public var end: Date?
     public var hasTime: Bool?
     public init(
-        id: Int = makeId(),
+        id: Int? = nil,
         title: String,
         notes: String? = nil,
         status: String? = nil,
@@ -33,7 +33,7 @@ public struct PlannerTask: Identifiable, Codable, Hashable {
         end: Date? = nil,
         hasTime: Bool? = nil
     ) {
-        self.id = id
+        self.id = id ?? makeId()
         self.title = title
         self.notes = notes
         self.status = status
