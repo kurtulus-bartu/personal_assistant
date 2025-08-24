@@ -104,6 +104,9 @@ private struct DayColumnView: View {
     @State private var resizingEventId: Int? = nil
     private var onePx: CGFloat { 1 / scale }
 
+    // Görevler için kenar boşlukları
+    private let eventMargin: CGFloat = 4
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.clear
@@ -161,6 +164,7 @@ private struct DayColumnView: View {
                     )
                     .frame(height: max(h, 24))
                     .offset(y: y)
+                    .padding(.horizontal, eventMargin) // Kenar boşlukları eklendi
                     .zIndex(isDraggedEvent ? 10.0 : (isSmall ? 2.0 : 0.0))
                     .scaleEffect(isDraggedEvent ? 1.02 : 1.0)
                     .gesture(moveGesture(ev))
@@ -447,14 +451,17 @@ private func dateFor(index: Int) -> Date {
 private struct HorizontalLines: View {
     let rowHeight: CGFloat
     let onePx: CGFloat
+
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(1...24, id: \.self) { i in
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(height: onePx)
-                    .offset(y: CGFloat(i) * rowHeight)
+        // Canvas ile tüm genişliğe tek katmanda çiz
+        Canvas { ctx, size in
+            let color = Color.gray.opacity(0.35)
+            for i in 0...24 {
+                let y = CGFloat(i) * rowHeight
+                let rect = CGRect(x: 0, y: y, width: size.width, height: max(onePx, 0.5))
+                ctx.fill(Path(rect), with: .color(color))
             }
         }
+        .allowsHitTesting(false)
     }
 }
