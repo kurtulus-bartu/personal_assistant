@@ -22,10 +22,15 @@ public final class TaskStore: ObservableObject {
     }
 
     public func syncFromSupabase() async {
-        if let remote = try? await SupabaseService.shared.fetchTasks() {
-            DispatchQueue.main.async {
+        do {
+            let remote = try await SupabaseService.shared.fetchTasks()
+            await MainActor.run {
                 self.tasks = remote
                 self.save()
+            }
+        } catch {
+            await MainActor.run {
+                print("fetchTasks failed:", error.localizedDescription)
             }
         }
     }

@@ -36,10 +36,15 @@ public final class EventStore: ObservableObject {
     }
 
     public func syncFromSupabase() async {
-        if let remote = try? await SupabaseService.shared.fetchEvents() {
-            DispatchQueue.main.async {
+        do {
+            let remote = try await SupabaseService.shared.fetchEvents()
+            await MainActor.run {
                 self.events = remote
                 self.save()
+            }
+        } catch {
+            await MainActor.run {
+                print("fetchEvents failed:", error.localizedDescription)
             }
         }
     }

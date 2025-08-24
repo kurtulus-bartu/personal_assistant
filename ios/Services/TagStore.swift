@@ -22,10 +22,15 @@ public final class TagStore: ObservableObject {
     }
 
     public func syncFromSupabase() async {
-        if let remote = try? await SupabaseService.shared.fetchTags() {
-            DispatchQueue.main.async {
+        do {
+            let remote = try await SupabaseService.shared.fetchTags()
+            await MainActor.run {
                 self.tags = remote
                 self.save()
+            }
+        } catch {
+            await MainActor.run {
+                print("fetchTags failed:", error.localizedDescription)
             }
         }
     }
