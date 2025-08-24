@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct CalendarPage: View {
     @StateObject private var store = EventStore()
+    @StateObject private var taskStore = TaskStore()
     @State private var selectedDate = Date()
     @State private var showKanban = false
     @State private var mode: Mode = .week
@@ -68,7 +69,13 @@ public struct CalendarPage: View {
                         HStack {
                             Button("Kanban") { showKanban = true }
                             Spacer()
-                            Button(action: { Task { await store.syncFromSupabase() } }) {
+                            Button(action: {
+                                Task {
+                                    await taskStore.replaceSupabaseWithLocal()
+                                    await taskStore.syncFromSupabase()
+                                    await store.syncFromSupabase()
+                                }
+                            }) {
                                 Image(systemName: "arrow.clockwise")
                             }
                         }
@@ -76,8 +83,11 @@ public struct CalendarPage: View {
                     .frame(maxWidth: .infinity)
                 }
             }
-            .sheet(isPresented: $showKanban) { KanbanPage() }
-            .task { await store.syncFromSupabase() }
+            .sheet(isPresented: $showKanban) { KanbanPage(store: taskStore) }
+            .task {
+                await taskStore.syncFromSupabase()
+                await store.syncFromSupabase()
+            }
             .background(Theme.primaryBG.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
         }
