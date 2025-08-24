@@ -13,7 +13,12 @@ public struct PlannerTask: Identifiable, Codable, Hashable {
     public var start: Date?
     public var end: Date?
     public var hasTime: Bool?
-    public init(id: Int = Int(Date().timeIntervalSince1970),
+    private static func makeId() -> Int {
+        let ms = Int(Date().timeIntervalSince1970 * 1000)
+        let rand = Int.random(in: 0..<1000)
+        return ms * 1000 + rand
+    }
+    public init(id: Int = Self.makeId(),
                 title: String,
                 notes: String? = nil,
                 status: String? = nil,
