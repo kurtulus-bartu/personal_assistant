@@ -47,4 +47,8 @@ public final class EventStore: ObservableObject {
     public func backupToSupabase() async {
         try? await SupabaseService.shared.upsertEvents(events)
     }
+
+    public func replaceSupabaseWithLocal() async {
+        try? await SupabaseService.shared.replaceEvents(events)
+    }
 }

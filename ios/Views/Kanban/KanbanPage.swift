@@ -58,7 +58,7 @@ private struct KanbanColumn: View {
                 }
                 .padding(8)
             }
-            .frame(height: 200)
+            .frame(minHeight: 240)
             .background(Theme.secondaryBG)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .onDrop(of: [.text], delegate: DropHandler(onDropTask: onDropTask))
@@ -72,9 +72,11 @@ private struct KanbanColumn: View {
         func performDrop(info: DropInfo) -> Bool {
             guard let provider = info.itemProviders(for: [.text]).first else { return false }
             provider.loadItem(forTypeIdentifier: UTType.text.identifier, options: nil) { item, _ in
-                if let data = item as? Data,
-                   let str = String(data: data, encoding: .utf8),
-                   let id = Int(str) {
+                let idString: String? =
+                    (item as? Data).flatMap { String(data: $0, encoding: .utf8) } ??
+                    (item as? String) ??
+                    (item as? NSString).map { String($0) }
+                if let id = idString.flatMap(Int.init) {
                     DispatchQueue.main.async { onDropTask(id) }
                 }
             }
