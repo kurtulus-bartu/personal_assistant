@@ -41,4 +41,12 @@ public struct PlannerEvent: Identifiable, Codable, Hashable {
         self.projectId = projectId
         self.project = project
     }
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, status, notes, tag, project
+        case start = "start_ts"
+        case end = "end_ts"
+        case tagId = "tag_id"
+        case projectId = "project_id"
+    }
 }

@@ -88,6 +88,16 @@ public struct CalendarPage: View {
                               }
                               Button(action: {
                                   Task {
+                                      let hasAnyLocal = !tagStore.tags.isEmpty ||
+                                         !projectStore.projects.isEmpty ||
+                                         !taskStore.tasks.isEmpty ||
+                                         !store.events.isEmpty
+
+                                      guard hasAnyLocal else {
+                                          print("Backup cancelled: Local stores are empty, replace would wipe remote.")
+                                          return
+                                      }
+
                                       await SyncOrchestrator.replaceRemoteWithLocal(
                                           tags: tagStore,
                                           projects: projectStore,

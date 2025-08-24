@@ -22,10 +22,15 @@ public final class ProjectStore: ObservableObject {
     }
 
     public func syncFromSupabase() async {
-        if let remote = try? await SupabaseService.shared.fetchProjects() {
-            DispatchQueue.main.async {
+        do {
+            let remote = try await SupabaseService.shared.fetchProjects()
+            await MainActor.run {
                 self.projects = remote
                 self.save()
+            }
+        } catch {
+            await MainActor.run {
+                print("fetchProjects failed:", error.localizedDescription)
             }
         }
     }

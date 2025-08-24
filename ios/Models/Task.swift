@@ -52,4 +52,15 @@ public struct PlannerTask: Identifiable, Codable, Hashable {
         self.end = end
         self.hasTime = hasTime
     }
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, notes, status, tag, project, parent
+        case tagId = "tag_id"
+        case projectId = "project_id"
+        case parentId = "parent_id"
+        case hasTime = "has_time"
+        case due = "due_date"
+        case start = "start_ts"
+        case end = "end_ts"
+    }
 }
