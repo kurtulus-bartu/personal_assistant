@@ -29,4 +29,12 @@ public final class ProjectStore: ObservableObject {
             }
         }
     }
+
+    public func backupToSupabase() async {
+        try? await SupabaseService.shared.upsertProjects(projects)
+    }
+
+    public func replaceSupabaseWithLocal() async {
+        try? await SupabaseService.shared.replaceProjects(projects)
+    }
 }
