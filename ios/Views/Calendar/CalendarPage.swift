@@ -292,8 +292,8 @@ private struct DayColumnView: View {
     }
 
     private func overlaps(_ a: PlannerTask, _ b: PlannerTask) -> Bool {
-        guard let as = a.start, let ae = a.end, let bs = b.start, let be = b.end else { return false }
-        return as < be && bs < ae
+        guard let aStart = a.start, let aEnd = a.end, let bStart = b.start, let bEnd = b.end else { return false }
+        return aStart < bEnd && bStart < aEnd
     }
 
     private func isSmallestInCluster(_ ev: PlannerTask, in events: [PlannerTask]) -> Bool {
