@@ -6,7 +6,6 @@ public extension Notification.Name {
     static let tasksDidUpdate = Notification.Name("tasksDidUpdate")
     static let tagsDidUpdate = Notification.Name("tagsDidUpdate")
     static let projectsDidUpdate = Notification.Name("projectsDidUpdate")
-    static let eventsDidUpdate = Notification.Name("eventsDidUpdate")
 }
 
 public extension ObservableObject {

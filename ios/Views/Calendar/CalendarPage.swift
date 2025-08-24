@@ -1,7 +1,6 @@
 import SwiftUI
 
 public struct CalendarPage: View {
-    @EnvironmentObject private var store: EventStore
     @EnvironmentObject private var taskStore: TaskStore
     @EnvironmentObject private var tagStore: TagStore
     @EnvironmentObject private var projectStore: ProjectStore
@@ -12,6 +11,10 @@ public struct CalendarPage: View {
     @State private var selectedProject: String?
     @State private var isRefreshing = false
     @State private var isBackingUp = false
+
+    private var events: [PlannerTask] {
+        taskStore.tasks.filter { $0.hasTime == true && $0.start != nil && $0.end != nil }
+    }
 
     enum Mode: String, CaseIterable { case day = "Gün", week = "Hafta" }
     public init() {}
@@ -54,7 +57,7 @@ public struct CalendarPage: View {
                 let H: CGFloat = 16
                 if mode == .week {
                     WeekView(selectedDate: $selectedDate,
-                             events: store.events,
+                             events: events,
                              tag: selectedTag,
                              project: selectedProject)
                     .padding(.horizontal, H)
@@ -113,10 +116,13 @@ public struct CalendarPage: View {
             .navigationBarTitleDisplayMode(.inline)
         }
     }
-    private func filteredEvents(for day: Date) -> [PlannerEvent] {
-        store.events(for: day).filter { ev in
-            (selectedTag == nil || ev.tag == selectedTag) &&
-            (selectedProject == nil || ev.project == selectedProject)
+    private func filteredEvents(for day: Date) -> [PlannerTask] {
+        let cal = Calendar.current
+        return events.filter { ev in
+            guard let start = ev.start else { return false }
+            return cal.isDate(start, inSameDayAs: day) &&
+                   (selectedTag == nil || ev.tag == selectedTag) &&
+                   (selectedProject == nil || ev.project == selectedProject)
         }
     }
 
@@ -125,7 +131,6 @@ public struct CalendarPage: View {
         await tagStore.syncFromSupabase()
         await projectStore.syncFromSupabase()
         await taskStore.syncFromSupabase()
-        await store.syncFromSupabase()
     }
 
     // Yenile - Supabase'den çek ve local'e kaydet
@@ -133,8 +138,7 @@ public struct CalendarPage: View {
         await SyncOrchestrator.initialPull(
             tags: tagStore,
             projects: projectStore,
-            tasks: taskStore,
-            events: store
+            tasks: taskStore
         )
 
         // HealthKit verilerini de yenile
@@ -148,8 +152,7 @@ public struct CalendarPage: View {
         // Önce local verilerin boş olmadığını kontrol et
         let hasAnyLocalData = !tagStore.tags.isEmpty ||
                              !projectStore.projects.isEmpty ||
-                             !taskStore.tasks.isEmpty ||
-                             !store.events.isEmpty
+                             !taskStore.tasks.isEmpty
 
         guard hasAnyLocalData else {
             print("Yedekleme iptal edildi: Local veriler boş, uzaktaki veriler silinir.")
@@ -160,17 +163,16 @@ public struct CalendarPage: View {
         await SyncOrchestrator.replaceRemoteWithLocal(
             tags: tagStore,
             projects: projectStore,
-            tasks: taskStore,
-            events: store
+            tasks: taskStore
         )
     }
 }
 
 private struct DayColumnView: View {
-    @EnvironmentObject var store: EventStore
+    @EnvironmentObject var taskStore: TaskStore
     @Environment(\.displayScale) private var scale
     let day: Date
-    let allEvents: [PlannerEvent]
+    let allEvents: [PlannerTask]
     var tag: String?
     var project: String?
     var dayWidth: CGFloat? = nil
@@ -250,50 +252,58 @@ private struct DayColumnView: View {
         .clipped()
     }
 
-    private var filteredEvents: [PlannerEvent] {
+    private var filteredEvents: [PlannerTask] {
         allEvents.filter { ev in
-            Calendar.current.isDate(ev.start, inSameDayAs: day) &&
-            (tag == nil || ev.tag == tag) &&
-            (project == nil || ev.project == project)
+            guard let start = ev.start else { return false }
+            return Calendar.current.isDate(start, inSameDayAs: day) &&
+                   (tag == nil || ev.tag == tag) &&
+                   (project == nil || ev.project == project)
         }
     }
 
-    private var orderedEvents: [PlannerEvent] {
+    private var orderedEvents: [PlannerTask] {
         filteredEvents.sorted { a, b in
-            if overlaps(a, b) && durationMin(a) != durationMin(b) {
-                return durationMin(a) > durationMin(b)
+            if let aStart = a.start, let bStart = b.start {
+                if overlaps(a, b) && durationMin(a) != durationMin(b) {
+                    return durationMin(a) > durationMin(b)
+                }
+                return aStart < bStart
             }
-            return a.start < b.start
+            return false
         }
     }
 
-    private func yOffset(for start: Date) -> CGFloat {
+    private func yOffset(for start: Date?) -> CGFloat {
+        guard let start = start else { return 0 }
         let comps = Calendar.current.dateComponents([.hour, .minute], from: start)
         let h = CGFloat(comps.hour ?? 0)
         let m = CGFloat(comps.minute ?? 0) / 60
         return (h + m) * rowHeight
     }
 
-    private func height(for ev: PlannerEvent) -> CGFloat {
-        CGFloat(ev.end.timeIntervalSince(ev.start) / 3600) * rowHeight
+    private func height(for ev: PlannerTask) -> CGFloat {
+        guard let start = ev.start, let end = ev.end else { return rowHeight }
+        return CGFloat(end.timeIntervalSince(start) / 3600) * rowHeight
     }
 
-    private func durationMin(_ ev: PlannerEvent) -> Int {
-        Int(ev.end.timeIntervalSince(ev.start) / 60)
+    private func durationMin(_ ev: PlannerTask) -> Int {
+        guard let start = ev.start, let end = ev.end else { return 0 }
+        return Int(end.timeIntervalSince(start) / 60)
     }
 
-    private func overlaps(_ a: PlannerEvent, _ b: PlannerEvent) -> Bool {
-        a.start < b.end && b.start < a.end
+    private func overlaps(_ a: PlannerTask, _ b: PlannerTask) -> Bool {
+        guard let as = a.start, let ae = a.end, let bs = b.start, let be = b.end else { return false }
+        return as < be && bs < ae
     }
 
-    private func isSmallestInCluster(_ ev: PlannerEvent, in events: [PlannerEvent]) -> Bool {
+    private func isSmallestInCluster(_ ev: PlannerTask, in events: [PlannerTask]) -> Bool {
         let cluster = events.filter { overlaps($0, ev) }
         guard cluster.count > 1 else { return false }
         let minDur = cluster.map(durationMin).min()!
         return durationMin(ev) == minDur
     }
 
-    private func moveGesture(_ ev: PlannerEvent) -> some Gesture {
+    private func moveGesture(_ ev: PlannerTask) -> some Gesture {
         DragGesture(minimumDistance: 3)
             .onChanged { value in
                 if draggedEventId == nil && resizingEventId == nil {
@@ -318,8 +328,8 @@ private struct DayColumnView: View {
                     let s = (m / 15) * 15
                     return Calendar.current.date(byAdding: .minute, value: s, to: d)!
                 }
-                var newStart = snap(ev.start)
-                var newEnd = snap(ev.end)
+                var newStart = snap(ev.start ?? day)
+                var newEnd = snap(ev.end ?? day)
 
                 if let dw = dayWidth {
                     let dShift = Int((value.translation.width / dw).rounded())
@@ -329,16 +339,15 @@ private struct DayColumnView: View {
                     }
                 }
 
-                if let idx = store.events.firstIndex(where: { $0.id == ev.id }) {
-                    store.events[idx].start = newStart
-                    store.events[idx].end = newEnd
-                    store.save()
-                    Task { await store.backupToSupabase() }
+                taskStore.updateTask(id: ev.id) { t in
+                    t.start = newStart
+                    t.end = newEnd
+                    t.hasTime = true
                 }
             }
     }
 
-    private func resizeGesture(_ ev: PlannerEvent) -> some Gesture {
+    private func resizeGesture(_ ev: PlannerTask) -> some Gesture {
         DragGesture(minimumDistance: 3)
             .onChanged { _ in
                 if resizingEventId == nil && draggedEventId == nil {
@@ -357,25 +366,25 @@ private struct DayColumnView: View {
                 let minutes = (value.translation.height / rowHeight) * 60.0
                 let m = Int(minutes.rounded())
                 let s = (m / 15) * 15
-                var newEnd = Calendar.current.date(byAdding: .minute, value: s, to: ev.end)!
-                if newEnd <= ev.start {
-                    newEnd = Calendar.current.date(byAdding: .minute, value: 15, to: ev.start)!
+                var baseEnd = ev.end ?? ev.start ?? day
+                var baseStart = ev.start ?? day
+                var newEnd = Calendar.current.date(byAdding: .minute, value: s, to: baseEnd)!
+                if newEnd <= baseStart {
+                    newEnd = Calendar.current.date(byAdding: .minute, value: 15, to: baseStart)!
                 }
 
-                if let idx = store.events.firstIndex(where: { $0.id == ev.id }) {
-                    store.events[idx].end = newEnd
-                    store.save()
-                    Task { await store.backupToSupabase() }
+                taskStore.updateTask(id: ev.id) { t in
+                    t.end = newEnd
+                    t.hasTime = true
                 }
             }
     }
 }
 
 private struct DayTimelineView: View {
-    @EnvironmentObject var store: EventStore
     @Environment(\.displayScale) private var scale
     var date: Date
-    var events: [PlannerEvent]
+    var events: [PlannerTask]
     private let hoursWidth: CGFloat = 44
     private let rowHeight: CGFloat = 60
     @State private var isDraggingEvent = false
@@ -409,7 +418,7 @@ private struct DayTimelineView: View {
 
 private struct WeekView: View {
     @Binding var selectedDate: Date
-    var events: [PlannerEvent]
+    var events: [PlannerTask]
     var tag: String?
     var project: String?
     @Environment(\.displayScale) private var scale

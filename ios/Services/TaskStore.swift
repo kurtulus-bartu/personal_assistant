@@ -80,34 +80,31 @@ public final class TaskStore: ObservableObject {
     public func addTask(_ task: PlannerTask) {
         tasks.append(task)
         save()
-        Task { await backupToSupabase() }
     }
     
     public func updateTask(id: Int, updates: (inout PlannerTask) -> Void) {
         if let index = tasks.firstIndex(where: { $0.id == id }) {
             updates(&tasks[index])
             save()
-            Task { await backupToSupabase() }
         }
     }
     
     public func removeTask(id: Int) {
         tasks.removeAll { $0.id == id }
         save()
-        Task { await backupToSupabase() }
     }
     
     // Filtreleme yardımcıları
     public func tasks(forStatus status: String) -> [PlannerTask] {
-        tasks.filter { normalizeStatus($0.status) == status }
+        tasks.filter { normalizeStatus($0.status) == status && ($0.hasTime != true) }
     }
 
     public func tasks(forTag tag: String) -> [PlannerTask] {
-        tasks.filter { $0.tag == tag }
+        tasks.filter { $0.tag == tag && ($0.hasTime != true) }
     }
 
     public func tasks(forProject project: String) -> [PlannerTask] {
-        tasks.filter { $0.project == project }
+        tasks.filter { $0.project == project && ($0.hasTime != true) }
     }
     
     private func normalizeStatus(_ raw: String?) -> String {
