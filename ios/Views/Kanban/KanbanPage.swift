@@ -74,8 +74,8 @@ private struct KanbanColumn: View {
 }
 
 public struct KanbanPage: View {
-    @StateObject private var store = TaskStore()
-    public init() {}
+    @ObservedObject var store: TaskStore
+    public init(store: TaskStore) { self.store = store }
     public var body: some View {
         VStack {
             ScrollView {
@@ -93,10 +93,6 @@ public struct KanbanPage: View {
                 .padding(.horizontal)
             }
             .scrollIndicators(.hidden)
-            .refreshable {
-                await store.replaceSupabaseWithLocal()
-                await store.syncFromSupabase()
-            }
 
             Button(action: {
                 // TODO: Görev ekleme
