@@ -3,6 +3,8 @@ import SwiftUI
 public struct CalendarPage: View {
     @StateObject private var store = EventStore()
     @StateObject private var taskStore = TaskStore()
+    @StateObject private var tagStore = TagStore()
+    @StateObject private var projectStore = ProjectStore()
     @State private var selectedDate = Date()
     @State private var showKanban = false
     @State private var mode: Mode = .week
@@ -24,14 +26,14 @@ public struct CalendarPage: View {
                     HStack {
                         Picker("Tag", selection: $selectedTag) {
                             Text("Tümü").tag(String?.none)
-                            ForEach(Array(Set(store.events.compactMap { $0.tag })), id: \.self) { t in
-                                Text(t).tag(String?.some(t))
+                            ForEach(tagStore.tags, id: \.id) { t in
+                                Text(t.name).tag(String?.some(t.name))
                             }
                         }
                         Picker("Proje", selection: $selectedProject) {
                             Text("Tümü").tag(String?.none)
-                            ForEach(Array(Set(store.events.compactMap { $0.project })), id: \.self) { p in
-                                Text(p).tag(String?.some(p))
+                            ForEach(projectStore.projects, id: \.id) { p in
+                                Text(p.name).tag(String?.some(p.name))
                             }
                         }
                         DatePicker("", selection: $selectedDate, displayedComponents: .date)
@@ -88,6 +90,8 @@ public struct CalendarPage: View {
             .task {
                 await taskStore.syncFromSupabase()
                 await store.syncFromSupabase()
+                await tagStore.syncFromSupabase()
+                await projectStore.syncFromSupabase()
             }
             .background(Theme.primaryBG.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
