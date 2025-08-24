@@ -88,14 +88,16 @@ public struct CalendarPage: View {
                               }
                               Button(action: {
                                   Task {
-                                      await taskStore.backupToSupabase()
-                                      await store.backupToSupabase()
+                                      // Foreign key bütünlüğü için önce tag ve projeler, sonra görevler ve etkinlikler
                                       await tagStore.backupToSupabase()
                                       await projectStore.backupToSupabase()
-                                      await taskStore.syncFromSupabase()
-                                      await store.syncFromSupabase()
+                                      await taskStore.backupToSupabase()
+                                      await store.backupToSupabase()
+                                      // Çekme sırasını da aynı mantıkla koru
                                       await tagStore.syncFromSupabase()
                                       await projectStore.syncFromSupabase()
+                                      await taskStore.syncFromSupabase()
+                                      await store.syncFromSupabase()
                                   }
                               }) {
                                   Image(systemName: "arrow.clockwise")
@@ -107,10 +109,10 @@ public struct CalendarPage: View {
             }
             .sheet(isPresented: $showKanban) { KanbanPage(store: taskStore) }
             .task {
-                await taskStore.syncFromSupabase()
-                await store.syncFromSupabase()
                 await tagStore.syncFromSupabase()
                 await projectStore.syncFromSupabase()
+                await taskStore.syncFromSupabase()
+                await store.syncFromSupabase()
             }
             .background(Theme.primaryBG.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
