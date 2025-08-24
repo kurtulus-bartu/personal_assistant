@@ -41,7 +41,7 @@ public struct CalendarPage: View {
                 .background(Theme.primaryBG)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(Theme.accent, lineWidth: 1)
+                        .stroke(Theme.secondaryBG, lineWidth: 1)
                 )
                 .padding(.horizontal)
                 .padding(.top, 2)
@@ -127,7 +127,7 @@ private struct DayColumnView: View {
                 let isDraggedEvent = draggedEventId == ev.id || resizingEventId == ev.id
 
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSmall ? Theme.accentBG : Theme.secondaryBG)
+                    .fill(isSmall ? Theme.primaryBG : Theme.secondaryBG)
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(ev.title).font(.caption).bold().foregroundColor(Theme.text)
