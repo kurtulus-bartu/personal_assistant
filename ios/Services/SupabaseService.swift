@@ -72,21 +72,22 @@ public final class SupabaseService {
         }
     }
     public func fetchTasks() async throws -> [PlannerTask] {
-        let fields = "id,title,status,tag:tags(name),project:projects(name)"
-        // Fetch tasks that do not have an assigned time range. In the
-        // Supabase table these are stored either with `has_time = false`
-        // or with a `NULL` value, so include both conditions.
-        let filter = "or=(has_time.eq.false,has_time.is.null)"
+        // start_ts ve has_time da gelsin
+        let fields = "id,title,status,tag:tags(name),project:projects(name),start_ts,has_time"
+        // Zamansız: has_time=false  veya  (has_time is null AND start_ts is null)
+        let filter = "or=(has_time.eq.false,and(has_time.is.null,start_ts.is.null))"
         let path = "tasks?select=\(fields)&\(filter)"
         guard let req = request(path: path, method: "GET") else { return [] }
         let (data, _) = try await URLSession.shared.data(for: req)
-        let dec = JSONDecoder()
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
         struct TaskRow: Codable {
             let id: Int
             let title: String
             let status: String?
             let tag: NameHolder?
             let project: NameHolder?
+            let start_ts: Date?
+            let has_time: Bool?
             struct NameHolder: Codable { let name: String }
         }
         let rows = try dec.decode([TaskRow].self, from: data)
