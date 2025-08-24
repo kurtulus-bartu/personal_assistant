@@ -45,9 +45,7 @@ private struct KanbanColumn: View {
                         .onDrag { NSItemProvider(object: String(task.id) as NSString) }
                 }
             }
-            .onDrop(of: [.text]) { providers in
-                handleDrop(providers)
-            }
+            .onDrop(of: [.text], isTargeted: nil, perform: handleDrop)
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
