@@ -73,8 +73,8 @@ public struct CalendarPage: View {
                               Spacer()
                               Button(action: {
                                   Task {
-                                      await taskStore.replaceSupabaseWithLocal()
-                                      await store.replaceSupabaseWithLocal()
+                                      await taskStore.backupToSupabase()
+                                      await store.backupToSupabase()
                                       await taskStore.syncFromSupabase()
                                       await store.syncFromSupabase()
                                   }

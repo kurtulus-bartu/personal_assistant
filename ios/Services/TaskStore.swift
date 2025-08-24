@@ -33,7 +33,4 @@ public final class TaskStore: ObservableObject {
     public func backupToSupabase() async {
         try? await SupabaseService.shared.upsertTasks(tasks)
     }
-    public func replaceSupabaseWithLocal() async {
-        try? await SupabaseService.shared.replaceTasks(tasks)
-    }
 }

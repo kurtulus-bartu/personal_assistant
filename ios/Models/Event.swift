@@ -11,7 +11,12 @@ public struct PlannerEvent: Identifiable, Codable, Hashable {
     public var tag: String?
     public var projectId: Int?
     public var project: String?
-    public init(id: Int = Int(Date().timeIntervalSince1970),
+    private static func makeId() -> Int {
+        let ms = Int(Date().timeIntervalSince1970 * 1000)
+        let rand = Int.random(in: 0..<1000)
+        return ms * 1000 + rand
+    }
+    public init(id: Int = Self.makeId(),
                 title: String,
                 start: Date,
                 end: Date,
