@@ -96,19 +96,15 @@ private struct KanbanColumn: View {
 }
 
 public struct KanbanPage: View {
-    @ObservedObject var taskStore: TaskStore
-    @ObservedObject var tagStore: TagStore
-    @ObservedObject var projectStore: ProjectStore
+    @EnvironmentObject var taskStore: TaskStore
+    @EnvironmentObject var tagStore: TagStore
+    @EnvironmentObject var projectStore: ProjectStore
     @State private var selectedTag: String?
     @State private var selectedProject: String?
     @State private var showingAddTask = false
     @State private var isRefreshing = false
-    
-    public init(taskStore: TaskStore, tagStore: TagStore, projectStore: ProjectStore) {
-        self.taskStore = taskStore
-        self.tagStore = tagStore
-        self.projectStore = projectStore
-    }
+
+    public init() {}
     
     public var body: some View {
         VStack {
@@ -224,9 +220,6 @@ public struct KanbanPage: View {
         }
         .sheet(isPresented: $showingAddTask) {
             AddTaskSheet(
-                taskStore: taskStore,
-                tagStore: tagStore,
-                projectStore: projectStore,
                 preSelectedTag: selectedTag,
                 preSelectedProject: selectedProject
             )
@@ -280,10 +273,10 @@ public struct KanbanPage: View {
 }
 
 private struct AddTaskSheet: View {
-    @ObservedObject var taskStore: TaskStore
-    @ObservedObject var tagStore: TagStore
-    @ObservedObject var projectStore: ProjectStore
-    
+    @EnvironmentObject var taskStore: TaskStore
+    @EnvironmentObject var tagStore: TagStore
+    @EnvironmentObject var projectStore: ProjectStore
+
     @State private var title = ""
     @State private var notes = ""
     @State private var selectedStatus = "todo"
@@ -291,17 +284,22 @@ private struct AddTaskSheet: View {
     @State private var selectedProject: String?
     @State private var hasDueDate = false
     @State private var dueDate = Date()
-    
+
     var preSelectedTag: String?
     var preSelectedProject: String?
-    
+
     @Environment(\.dismiss) private var dismiss
-    
+
     private let statusOptions = [
         ("todo", "Yapılacak"),
         ("doing", "Yapılıyor"),
         ("done", "Bitti")
     ]
+
+    init(preSelectedTag: String?, preSelectedProject: String?) {
+        self.preSelectedTag = preSelectedTag
+        self.preSelectedProject = preSelectedProject
+    }
     
     var body: some View {
         NavigationView {

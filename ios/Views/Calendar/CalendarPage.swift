@@ -1,10 +1,10 @@
 import SwiftUI
 
 public struct CalendarPage: View {
-    @StateObject private var store = EventStore()
-    @StateObject private var taskStore = TaskStore()
-    @StateObject private var tagStore = TagStore()
-    @StateObject private var projectStore = ProjectStore()
+    @EnvironmentObject private var store: EventStore
+    @EnvironmentObject private var taskStore: TaskStore
+    @EnvironmentObject private var tagStore: TagStore
+    @EnvironmentObject private var projectStore: ProjectStore
     @State private var selectedDate = Date()
     @State private var showKanban = false
     @State private var mode: Mode = .week
@@ -58,12 +58,10 @@ public struct CalendarPage: View {
                              tag: selectedTag,
                              project: selectedProject)
                     .padding(.horizontal, H)
-                    .environmentObject(store)
                 } else {
                     DayTimelineView(date: selectedDate,
                                     events: filteredEvents(for: selectedDate))
                     .padding(.horizontal, H)
-                    .environmentObject(store)
                 }
             }
             .toolbar {
@@ -106,7 +104,7 @@ public struct CalendarPage: View {
                 }
             }
             .sheet(isPresented: $showKanban) {
-                KanbanPage(taskStore: taskStore, tagStore: tagStore, projectStore: projectStore)
+                KanbanPage()
             }
             .task {
                 await initialLoad()
@@ -160,14 +158,6 @@ public struct CalendarPage: View {
 
         // Local verileri Supabase'e yaz (tamamen yer değiştir)
         await SyncOrchestrator.replaceRemoteWithLocal(
-            tags: tagStore,
-            projects: projectStore,
-            tasks: taskStore,
-            events: store
-        )
-
-        // Sonrasında güncel verileri tekrar çek
-        await SyncOrchestrator.initialPull(
             tags: tagStore,
             projects: projectStore,
             tasks: taskStore,
