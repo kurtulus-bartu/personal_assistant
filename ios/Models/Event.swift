@@ -16,7 +16,7 @@ public struct PlannerEvent: Identifiable, Codable, Hashable {
         let rand = Int.random(in: 0..<1000)
         return ms * 1000 + rand
     }
-    public init(id: Int = Self.makeId(),
+    public init(id: Int? = nil,
                 title: String,
                 start: Date,
                 end: Date,
@@ -26,7 +26,7 @@ public struct PlannerEvent: Identifiable, Codable, Hashable {
                 tag: String? = nil,
                 projectId: Int? = nil,
                 project: String? = nil) {
-        self.id = id
+        self.id = id ?? Self.makeId()
         self.title = title
         self.start = start
         self.end = end
