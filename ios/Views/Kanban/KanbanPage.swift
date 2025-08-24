@@ -229,25 +229,24 @@ public struct KanbanPage: View {
 
     private func filtered(status: String) -> [PlannerTask] {
         taskStore.tasks.filter { task in
+            guard task.hasTime != true else { return false }
             guard normalizeStatus(task.status) == status else { return false }
-            
+
             if let selectedTag = selectedTag {
                 guard task.tag == selectedTag else { return false }
             }
-            
+
             if let selectedProject = selectedProject {
                 guard task.project == selectedProject else { return false }
             }
-            
+
             return true
         }
     }
 
     private func moveTask(_ id: Int, to status: String) {
-        if let idx = taskStore.tasks.firstIndex(where: { $0.id == id }) {
-            taskStore.tasks[idx].status = status
-            taskStore.save()
-            Task { await taskStore.backupToSupabase() }
+        taskStore.updateTask(id: id) { t in
+            t.status = status
         }
     }
     
@@ -382,12 +381,7 @@ private struct AddTaskSheet: View {
             hasTime: false
         )
         
-        taskStore.tasks.append(newTask)
-        taskStore.save()
-        
-        Task {
-            await taskStore.backupToSupabase()
-        }
+        taskStore.addTask(newTask)
         
         dismiss()
     }

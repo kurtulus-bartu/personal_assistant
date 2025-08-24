@@ -81,75 +81,10 @@ public final class SupabaseService {
         try await upsertProjects(items)
     }
 
-    // MARK: Events
-    public func fetchEvents() async throws -> [PlannerEvent] {
-        let fields = "id,title,notes,status,start_ts,end_ts,tag_id,tag:tags(name),project_id,project:projects(name)"
-        let path = "tasks?select=\(fields)&has_time=eq.true"
-        guard let req = request(path: path, method: "GET") else { return [] }
-        let (data, _) = try await URLSession.shared.data(for: req)
-        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
-        struct TaskRow: Codable {
-            let id: Int
-            let title: String
-            let notes: String?
-            let status: String?
-            let start_ts: Date
-            let end_ts: Date
-            let tag_id: Int?
-            let tag: NameHolder?
-            let project_id: Int?
-            let project: NameHolder?
-            struct NameHolder: Codable { let name: String }
-        }
-        let rows = try dec.decode([TaskRow].self, from: data)
-        return rows.map { r in
-            PlannerEvent(id: r.id,
-                         title: r.title,
-                         start: r.start_ts,
-                         end: r.end_ts,
-                         status: r.status,
-                         notes: r.notes,
-                         tagId: r.tag_id,
-                         tag: r.tag?.name,
-                         projectId: r.project_id,
-                         project: r.project?.name)
-        }
-    }
-    public func upsertEvents(_ items: [PlannerEvent]) async throws {
-        struct UpsertTask: Codable {
-            var id: Int?
-            var title: String
-            var notes: String?
-            var status: String?
-            var has_time: Bool
-            var start_ts: Date
-            var end_ts: Date
-            var tag_id: Int?
-            var project_id: Int?
-        }
-        let rows = items.map { ev in
-            UpsertTask(id: ev.id,
-                       title: ev.title,
-                       notes: ev.notes,
-                       status: ev.status,
-                       has_time: true,
-                       start_ts: ev.start,
-                       end_ts: ev.end,
-                       tag_id: ev.tagId,
-                       project_id: ev.projectId)
-        }
-        let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
-        let data = try enc.encode(rows)
-        if let req = request(path: "tasks?on_conflict=id", body: data) {
-            _ = try await URLSession.shared.data(for: req)
-        }
-    }
-
     // MARK: Tasks
     public func fetchTasks() async throws -> [PlannerTask] {
         let fields = "id,title,notes,status,tag_id,tag:tags(name),project_id,project:projects(name),parent_id,parent:tasks!tasks_parent_id_fkey(title),has_time,due_date,start_ts,end_ts"
-        let filter = "or=(has_time.eq.false,and(has_time.is.null,start_ts.is.null))"
-        let path = "tasks?select=\(fields)&\(filter)"
+        let path = "tasks?select=\(fields)"
         guard let req = request(path: path, method: "GET") else { return [] }
         let (data, _) = try await URLSession.shared.data(for: req)
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
@@ -226,28 +161,13 @@ public final class SupabaseService {
     }
 
     public func deleteAllTasks() async throws {
-        let filter = "or=(has_time.eq.false,and(has_time.is.null,start_ts.is.null))"
-        if let req = request(path: "tasks?\(filter)", method: "DELETE") {
+        if let req = request(path: "tasks", method: "DELETE") {
             _ = try await URLSession.shared.data(for: req)
         }
     }
     public func replaceTasks(_ items: [PlannerTask]) async throws {
         try await deleteAllTasks()
         try await upsertTasks(items)
-    }
-    public func deleteAllEvents() async throws {
-        if let req = request(path: "tasks?has_time=eq.true", method: "DELETE") {
-            _ = try await URLSession.shared.data(for: req)
-        }
-    }
-    public func replaceEvents(_ items: [PlannerEvent]) async throws {
-        try await deleteAllEvents()
-        try await upsertEvents(items)
-    }
-
-    public func deleteAllTaskRows() async throws {
-        try await deleteAllEvents()
-        try await deleteAllTasks()
     }
 
     // MARK: Other

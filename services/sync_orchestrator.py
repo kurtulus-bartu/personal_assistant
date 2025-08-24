@@ -81,11 +81,7 @@ class SyncOrchestrator(QtCore.QObject):
 
     # ---------- PROJECTS ----------
     def add_project(self, name: str, tag_id: Optional[int] = None):
-        pid = self.db.add_project_local(name, tag_id)
-        try:
-            api.upsert_project(name, pid, tag_id)
-        except Exception:
-            pass
+        self.db.add_project_local(name, tag_id)
         self.projectsUpdated.emit(self.db.get_projects())
 
     def delete_project(self, project_id: int):
@@ -114,10 +110,6 @@ class SyncOrchestrator(QtCore.QObject):
         # 🔒 Sadece status güncellenir — title asla değişmez
         self.db.set_task_status(task_id, status)
         self.tasksUpdated.emit(self.db.get_tasks())
-        try:
-            api.upsert_task({"id": int(task_id), "status": status})
-        except Exception:
-            pass
 
     def set_task_times(self, task_id: int, start_iso: Optional[str], end_iso: Optional[str]):
         self.db.set_task_times(task_id, start_iso, end_iso)
@@ -126,10 +118,6 @@ class SyncOrchestrator(QtCore.QObject):
     def set_task_parent(self, task_id: int, parent_id: Optional[int]):
         self.db.set_task_parent(task_id, parent_id)
         self.tasksUpdated.emit(self.db.get_tasks())
-        try:
-            api.upsert_task({"id": int(task_id), "parent_id": parent_id})
-        except Exception:
-            pass
 
     def get_task_by_id(self, task_id: int):
         return self.db.get_task_by_id(task_id)
