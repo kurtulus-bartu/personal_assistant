@@ -75,8 +75,12 @@ public struct CalendarPage: View {
                                   Task {
                                       await taskStore.backupToSupabase()
                                       await store.backupToSupabase()
+                                      await tagStore.backupToSupabase()
+                                      await projectStore.backupToSupabase()
                                       await taskStore.syncFromSupabase()
                                       await store.syncFromSupabase()
+                                      await tagStore.syncFromSupabase()
+                                      await projectStore.syncFromSupabase()
                                   }
                               }) {
                                   Image(systemName: "arrow.clockwise")

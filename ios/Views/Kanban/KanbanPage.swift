@@ -3,29 +3,34 @@ import UniformTypeIdentifiers
 
 private struct TaskCard: View {
     var task: PlannerTask
+    private static let df: DateFormatter = {
+        let d = DateFormatter()
+        d.dateStyle = .short
+        return d
+    }()
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(task.title)
-                    .foregroundColor(Theme.text)
-                if let meta = metaText {
-                    Text(meta)
-                        .font(.footnote)
-                        .foregroundColor(Theme.textMuted)
-                }
-            }
+            Text(titleWithMeta)
+                .foregroundColor(Theme.text)
             Spacer()
+            if let due = task.due {
+                Text(Self.df.string(from: due))
+                    .font(.footnote)
+                    .foregroundColor(Theme.textMuted)
+            }
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.secondaryBG)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
-    private var metaText: String? {
+    private var titleWithMeta: String {
         var parts: [String] = []
         if let tag = task.tag { parts.append(tag) }
         if let project = task.project { parts.append(project) }
-        return parts.isEmpty ? nil : parts.joined(separator: " > ")
+        if let parent = task.parent { parts.append(parent) }
+        let meta = parts.isEmpty ? "" : " (" + parts.joined(separator: " > ") + ")"
+        return task.title + meta
     }
 }
 
