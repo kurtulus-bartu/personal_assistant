@@ -39,12 +39,18 @@ private struct KanbanColumn: View {
             Text(title)
                 .foregroundColor(Theme.text)
                 .font(.headline)
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(tasks) { task in
-                    TaskCard(task: task)
-                        .onDrag { NSItemProvider(object: String(task.id) as NSString) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(tasks) { task in
+                        TaskCard(task: task)
+                            .onDrag { NSItemProvider(object: String(task.id) as NSString) }
+                    }
                 }
+                .padding(8)
             }
+            .frame(height: 200)
+            .background(Theme.secondaryBG)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
             .onDrop(of: [.text], delegate: DropHandler(onDropTask: onDropTask))
         }
         .padding()
@@ -88,7 +94,7 @@ public struct KanbanPage: View {
             }
             .scrollIndicators(.hidden)
             .refreshable {
-                await store.backupToSupabase()
+                await store.replaceSupabaseWithLocal()
                 await store.syncFromSupabase()
             }
 
