@@ -98,15 +98,15 @@ public final class TaskStore: ObservableObject {
     }
     
     // Filtreleme yardımcıları
-    public func tasks(for status: String) -> [PlannerTask] {
+    public func tasks(forStatus status: String) -> [PlannerTask] {
         tasks.filter { normalizeStatus($0.status) == status }
     }
-    
-    public func tasks(for tag: String) -> [PlannerTask] {
+
+    public func tasks(forTag tag: String) -> [PlannerTask] {
         tasks.filter { $0.tag == tag }
     }
-    
-    public func tasks(for project: String) -> [PlannerTask] {
+
+    public func tasks(forProject project: String) -> [PlannerTask] {
         tasks.filter { $0.project == project }
     }
     
