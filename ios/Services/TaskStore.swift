@@ -29,16 +29,20 @@ public final class TaskStore: ObservableObject {
 
     public func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
-        if let decoded = try? JSONDecoder().decode([PlannerTask].self, from: data) {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        if let decoded = try? decoder.decode([PlannerTask].self, from: data) {
             tasks = decoded
         }
     }
 
     public func save() {
-        if let data = try? JSONEncoder().encode(tasks) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(tasks) {
             try? data.write(to: fileURL)
         }
-        
+
         // Değişiklik bildirimi gönder
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .tasksDidUpdate, object: self)
