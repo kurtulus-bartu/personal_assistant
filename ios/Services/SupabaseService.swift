@@ -29,11 +29,32 @@ public final class SupabaseService {
     public func fetchTags() async throws -> [PlannerTag] {
         guard let req = request(path: "tags?select=*", method: "GET") else { return [] }
         let (data, _) = try await URLSession.shared.data(for: req)
-        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+
+        let dec = JSONDecoder()
+        dec.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+
+            let formatterWithFractionalSeconds = ISO8601DateFormatter()
+            formatterWithFractionalSeconds.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatterWithFractionalSeconds.date(from: dateString) {
+                return date
+            }
+
+            let formatterWithoutFractionalSeconds = ISO8601DateFormatter()
+            formatterWithoutFractionalSeconds.formatOptions = [.withInternetDateTime]
+            if let date = formatterWithoutFractionalSeconds.date(from: dateString) {
+                return date
+            }
+
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date string \(dateString)")
+        }
+
         return try dec.decode([PlannerTag].self, from: data)
     }
 
     public func upsertTags(_ items: [PlannerTag]) async throws {
+        guard !items.isEmpty else { return }
         struct Row: Codable { var id: Int; var name: String }
         let rows = items.map { Row(id: $0.id, name: $0.name) }
         let data = try JSONEncoder().encode(rows)
@@ -43,7 +64,7 @@ public final class SupabaseService {
     }
 
     public func deleteAllTags() async throws {
-        if let req = request(path: "tags", method: "DELETE") {
+        if let req = request(path: "tags?id=gte.0", method: "DELETE") {
             _ = try await URLSession.shared.data(for: req)
         }
     }
@@ -57,11 +78,32 @@ public final class SupabaseService {
     public func fetchProjects() async throws -> [PlannerProject] {
         guard let req = request(path: "projects?select=*", method: "GET") else { return [] }
         let (data, _) = try await URLSession.shared.data(for: req)
-        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+
+        let dec = JSONDecoder()
+        dec.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+
+            let formatterWithFractionalSeconds = ISO8601DateFormatter()
+            formatterWithFractionalSeconds.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatterWithFractionalSeconds.date(from: dateString) {
+                return date
+            }
+
+            let formatterWithoutFractionalSeconds = ISO8601DateFormatter()
+            formatterWithoutFractionalSeconds.formatOptions = [.withInternetDateTime]
+            if let date = formatterWithoutFractionalSeconds.date(from: dateString) {
+                return date
+            }
+
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date string \(dateString)")
+        }
+
         return try dec.decode([PlannerProject].self, from: data)
     }
 
     public func upsertProjects(_ items: [PlannerProject]) async throws {
+        guard !items.isEmpty else { return }
         struct Row: Codable { var id: Int; var name: String; var tag_id: Int? }
         let rows = items.map { Row(id: $0.id, name: $0.name, tag_id: $0.tagId) }
         let data = try JSONEncoder().encode(rows)
@@ -71,7 +113,7 @@ public final class SupabaseService {
     }
 
     public func deleteAllProjects() async throws {
-        if let req = request(path: "projects", method: "DELETE") {
+        if let req = request(path: "projects?id=gte.0", method: "DELETE") {
             _ = try await URLSession.shared.data(for: req)
         }
     }
@@ -83,7 +125,7 @@ public final class SupabaseService {
 
     // MARK: Tasks
     public func fetchTasks() async throws -> [PlannerTask] {
-        let fields = "id,title,notes,status,tag_id,tag:tags(name),project_id,project:projects(name),parent_id,parent:tasks!tasks_parent_id_fkey(title),has_time,due_date,start_ts,end_ts"
+        let fields = "id,title,notes,status,tag_id,tag:tags(name),project_id,project:projects(name),parent_id,has_time,due_date,start_ts,end_ts"
         let path = "tasks?select=\(fields)"
         guard let req = request(path: path, method: "GET") else { return [] }
         let (data, _) = try await URLSession.shared.data(for: req)
@@ -98,7 +140,6 @@ public final class SupabaseService {
             let project_id: Int?
             let project: NameHolder?
             let parent_id: Int?
-            let parent: NameHolder?
             let has_time: Bool?
             let due_date: String?
             let start_ts: Date?
@@ -118,50 +159,64 @@ public final class SupabaseService {
                                projectId: r.project_id,
                                project: r.project?.name,
                                parentId: r.parent_id,
-                               parent: r.parent?.name,
+                               parent: nil,
                                due: due,
                                start: r.start_ts,
                                end: r.end_ts,
                                hasTime: r.has_time)
         }
     }
+
     public func upsertTasks(_ items: [PlannerTask]) async throws {
-        struct UpsertTask: Codable {
-            var id: Int?
-            var title: String
-            var notes: String?
-            var status: String?
-            var has_time: Bool
-            var tag_id: Int?
-            var project_id: Int?
-            var parent_id: Int?
-            var due_date: String?
-            var start_ts: Date?
-            var end_ts: Date?
+        guard !items.isEmpty else { return }
+
+        let tasksWithoutParent = items.filter { $0.parentId == nil }
+        if !tasksWithoutParent.isEmpty {
+            try await _upsertTaskBatch(tasksWithoutParent)
         }
-        let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
-        let rows = items.map { t in
-            UpsertTask(id: t.id,
-                       title: t.title,
-                       notes: t.notes,
-                       status: t.status,
-                       has_time: t.hasTime ?? false,
-                       tag_id: t.tagId,
-                       project_id: t.projectId,
-                       parent_id: t.parentId,
-                       due_date: t.due.map { df.string(from: $0) },
-                       start_ts: t.start,
-                       end_ts: t.end)
+
+        let tasksWithParent = items.filter { $0.parentId != nil }
+        if !tasksWithParent.isEmpty {
+            try await _upsertTaskBatch(tasksWithParent)
         }
-        let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
-        let data = try enc.encode(rows)
+    }
+
+    private func _upsertTaskBatch(_ items: [PlannerTask]) async throws {
+        let fullDateFormatter = ISO8601DateFormatter()
+        fullDateFormatter.formatOptions = [.withFullDate]
+
+        let timestampFormatter = ISO8601DateFormatter()
+        timestampFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let rows: [[String: Any]] = items.map { task in
+            return [
+                "id": task.id,
+                "title": task.title,
+                "notes": task.notes ?? "",
+                "status": task.status ?? "todo",
+                "has_time": task.hasTime ?? false,
+                "tag_id": task.tagId ?? NSNull(),
+                "project_id": task.projectId ?? NSNull(),
+                "parent_id": task.parentId ?? NSNull(),
+                "due_date": task.due.map { fullDateFormatter.string(from: $0) } ?? NSNull(),
+                "start_ts": task.start.map { timestampFormatter.string(from: $0) } ?? NSNull(),
+                "end_ts": task.end.map { timestampFormatter.string(from: $0) } ?? NSNull()
+            ]
+        }
+
+        let data = try JSONSerialization.data(withJSONObject: rows, options: [])
+
         if let req = request(path: "tasks?on_conflict=id", body: data) {
-            _ = try await URLSession.shared.data(for: req)
+            let (responseData, response) = try await URLSession.shared.data(for: req)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode >= 300 {
+                let errorMessage = String(data: responseData, encoding: .utf8) ?? "No error message"
+                print("Supabase upsertTasks error: \(httpResponse.statusCode) - \(errorMessage)")
+            }
         }
     }
 
     public func deleteAllTasks() async throws {
-        if let req = request(path: "tasks", method: "DELETE") {
+        if let req = request(path: "tasks?id=gte.0", method: "DELETE") {
             _ = try await URLSession.shared.data(for: req)
         }
     }

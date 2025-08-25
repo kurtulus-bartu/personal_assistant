@@ -27,13 +27,17 @@ public final class ProjectStore: ObservableObject {
 
     public func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
-        if let decoded = try? JSONDecoder().decode([PlannerProject].self, from: data) {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        if let decoded = try? decoder.decode([PlannerProject].self, from: data) {
             projects = decoded
         }
     }
 
     public func save() {
-        if let data = try? JSONEncoder().encode(projects) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(projects) {
             try? data.write(to: fileURL)
         }
 

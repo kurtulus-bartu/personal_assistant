@@ -27,13 +27,17 @@ public final class TagStore: ObservableObject {
 
     public func load() {
         guard let data = try? Data(contentsOf: fileURL) else { return }
-        if let decoded = try? JSONDecoder().decode([PlannerTag].self, from: data) {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        if let decoded = try? decoder.decode([PlannerTag].self, from: data) {
             tags = decoded
         }
     }
 
     public func save() {
-        if let data = try? JSONEncoder().encode(tags) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(tags) {
             try? data.write(to: fileURL)
         }
 
